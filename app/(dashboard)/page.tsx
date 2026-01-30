@@ -1,9 +1,13 @@
 import { Button } from '@/components/ui/button';
 import { ArrowRight, CreditCard, Database} from 'lucide-react';
-import Link from 'next/link';
 import { Terminal } from './terminal';
+import { getCurrentUser } from '@/lib/my-app-auth';
+import { HomeCTAButton } from '@/components/home-cta-button';
 
-export default function HomePage() {
+export default async function HomePage() {
+  const session = await getCurrentUser();
+  const isSignedIn = !!session;
+
   return (
     <main>
       <section className="py-20">
@@ -11,24 +15,16 @@ export default function HomePage() {
           <div className="lg:grid lg:grid-cols-12 lg:gap-8">
             <div className="sm:text-center md:max-w-2xl md:mx-auto lg:col-span-6 lg:text-left">
               <h1 className="text-4xl font-bold text-gray-900 tracking-tight sm:text-5xl md:text-6xl">
-                ALL New Review Tool
-                <span className="block text-orange-500">More Control</span>
+                <span className="block text-orange-500 my-3">SupaBase </span>Dashboard 
+                Tool
               </h1>
               <p className="mt-3 text-base text-gray-500 sm:mt-5 sm:text-xl lg:text-lg xl:text-xl">
-                This is a good alternative to our previous review tool. It offers
-                enhanced features and greater flexibility to suit our needs.
+                This is our new way of Managing our Supabase databases effortlessly with a cleaner,
+                more intuitive experience than the default Supabase dashboard.
               </p>
               <div className="mt-8 sm:max-w-lg sm:mx-auto sm:text-center lg:text-left lg:mx-0">
-                  <Link href="/sign-in">
-                  <Button
-                    variant="outline"
-                    className="text-2xl bg-amber-700 rounded-full py-5 px-20 bg-background"
-                  >
-                    SignIn
-                    <ArrowRight className="ml-2 h-5 w-5 mr-2" />
-                  </Button>
-                </Link>
-                </div>
+                <HomeCTAButton isSignedIn={isSignedIn} />
+              </div>
             </div>
             <div className="mt-12 relative sm:max-w-lg sm:mx-auto lg:mt-0 lg:max-w-none lg:mx-0 lg:col-span-6 lg:flex lg:items-center">
               <Terminal />

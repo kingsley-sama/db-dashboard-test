@@ -1,0 +1,7 @@
+<svg width="400" height="400" viewBox="0 0 400 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="400" height="400" fill="#F3F4F6"/>
+  <path d="M200 140C177.909 140 160 157.909 160 180C160 202.091 177.909 220 200 220C222.091 220 240 202.091 240 180C240 157.909 222.091 140 200 140Z" fill="#D1D5DB"/>
+  <path d="M280 260L240 220L160 300H280V260Z" fill="#D1D5DB"/>
+  <path d="M240 220L200 260L160 300L200 340L280 260L240 220Z" fill="#9CA3AF"/>
+  <text x="200" y="370" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#6B7280" text-anchor="middle">No Image</text>
+</svg>

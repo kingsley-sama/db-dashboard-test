@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ArrowLeft, ArrowRight, CircleIcon, Loader2, Upload, X } from 'lucide-react';
-import { signIn, signUp } from './actions';
+import { signIn, signUp } from '@/app/my-app/actions/dashboard_actions';
 import { ActionState } from '@/lib/auth/middleware';
 import Image from 'next/image';
 
