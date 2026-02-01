@@ -6,7 +6,7 @@ export default function NotFound() {
     <div className="flex items-center justify-center min-h-[100dvh]">
       <div className="max-w-md space-y-8 p-4 text-center">
         <div className="flex justify-center">
-          <CircleIcon className="size-12 text-orange-500" />
+          <CircleIcon className="size-12" style={{ color: '#f05d5e' }} />
         </div>
         <h1 className="text-4xl font-bold text-gray-900 tracking-tight">
           Page Not Found
@@ -17,7 +17,12 @@ export default function NotFound() {
         </p>
         <Link
           href="/"
-          className="max-w-48 mx-auto flex justify-center py-2 px-4 border border-gray-300 rounded-full shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
+          className="max-w-48 mx-auto flex justify-center py-2 px-4 border border-gray-300 rounded-full shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none"
+          onFocus={(e) => {
+            e.currentTarget.style.outline = 'none';
+            e.currentTarget.style.boxShadow = '0 0 0 3px rgba(240, 93, 94, 0.3), 0 0 0 2px rgba(240, 93, 94, 0.1)';
+          }}
+          onBlur={(e) => e.currentTarget.style.boxShadow = ''}
         >
           Back to Home
         </Link>

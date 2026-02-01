@@ -101,7 +101,10 @@ export default function GeneralPage() {
             )}
             <Button
               type="submit"
-              className="bg-orange-500 hover:bg-orange-600 text-white"
+              className="text-white"
+              style={{ backgroundColor: '#f05d5e' }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e04d4e'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f05d5e'}
               disabled={isPending}
             >
               {isPending ? (

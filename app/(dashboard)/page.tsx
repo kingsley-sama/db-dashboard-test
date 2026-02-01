@@ -14,20 +14,17 @@ export default async function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="lg:grid lg:grid-cols-12 lg:gap-8">
             <div className="sm:text-center md:max-w-2xl md:mx-auto lg:col-span-6 lg:text-left">
-              <h1 className="text-4xl font-bold text-gray-900 tracking-tight sm:text-5xl md:text-6xl">
-                <span className="block text-orange-500 my-3">SupaBase </span>Dashboard 
+              <h1 className="text-5xl font-bold tracking-tight sm:text-6xl md:text-7xl" style={{ color: '#012e64' }}>
+                <span className="block my-3" >SupaBase </span>Dashboard 
                 Tool
               </h1>
-              <p className="mt-3 text-base text-gray-500 sm:mt-5 sm:text-xl lg:text-lg xl:text-xl">
+              <p className="mt-3 text-lg text-gray-500 sm:mt-5 sm:text-xl lg:text-2xl">
                 This is our new way of Managing our Supabase databases effortlessly with a cleaner,
                 more intuitive experience than the default Supabase dashboard.
               </p>
               <div className="mt-8 sm:max-w-lg sm:mx-auto sm:text-center lg:text-left lg:mx-0">
                 <HomeCTAButton isSignedIn={isSignedIn} />
               </div>
-            </div>
-            <div className="mt-12 relative sm:max-w-lg sm:mx-auto lg:mt-0 lg:max-w-none lg:mx-0 lg:col-span-6 lg:flex lg:items-center">
-              <Terminal />
             </div>
           </div>
         </div>
@@ -37,7 +34,7 @@ export default async function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="lg:grid lg:grid-cols-3 lg:gap-8">
             <div>
-              <div className="flex items-center justify-center h-12 w-12 rounded-md bg-orange-500 text-white">
+              <div className="flex items-center justify-center h-12 w-12 rounded-md text-white" style={{ backgroundColor: '#f05d5e' }}>
                 <svg viewBox="0 0 24 24" className="h-6 w-6">
                   <path
                     fill="currentColor"
@@ -46,10 +43,10 @@ export default async function HomePage() {
                 </svg>
               </div>
               <div className="mt-5">
-                <h2 className="text-lg font-medium text-gray-900">
+                <h2 className="text-2xl font-medium" style={{ color: '#012e64' }}>
                   Next.js and React
                 </h2>
-                <p className="mt-2 text-base text-gray-500">
+                <p className="mt-2 text-lg text-gray-500">
                   Leverage the power of modern web technologies for optimal
                   performance and developer experience.
                 </p>
@@ -57,14 +54,14 @@ export default async function HomePage() {
             </div>
 
             <div className="mt-10 lg:mt-0">
-              <div className="flex items-center justify-center h-12 w-12 rounded-md bg-orange-500 text-white">
+              <div className="flex items-center justify-center h-12 w-12 rounded-md text-white" style={{ backgroundColor: '#f05d5e' }}>
                 <Database className="h-6 w-6" />
               </div>
               <div className="mt-5">
-                <h2 className="text-lg font-medium text-gray-900">
+                <h2 className="text-2xl font-medium" style={{ color: '#012e64' }}>
                   Postgres and SupaBase
                 </h2>
-                <p className="mt-2 text-base text-gray-500">
+                <p className="mt-2 text-lg text-gray-500">
                   Robust database solution with an intuitive ORM for efficient
                   data management and scalability.
                 </p>

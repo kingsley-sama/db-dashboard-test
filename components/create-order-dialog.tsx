@@ -2,12 +2,19 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { X, AlertCircle } from "lucide-react"
+import { Textarea } from "@/components/ui/textarea"
+
+interface ProductCode {
+  id: number
+  name: string
+  abbreviation: string
+}
 
 export function CreateOrderDialog({
   onClose,
@@ -18,19 +25,39 @@ export function CreateOrderDialog({
 }) {
   const [formData, setFormData] = useState({
     project_id: "",
-    order_number: "",
-    product: "",
-    product_name: "",
-    order_type: "standard",
-    quantity: "",
-    cost: "",
     supplier: "",
-    due_delivery_date: "",
+    cost: "",
+    product_name: "",
+    comments: "",
+    order_type: "",
+    quantity: "",
   })
+  const [productCodes, setProductCodes] = useState<ProductCode[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [loadingProducts, setLoadingProducts] = useState(true)
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  // Fetch product codes on mount
+  useEffect(() => {
+    const fetchProductCodes = async () => {
+      try {
+        const response = await fetch('/api/product-codes')
+        if (response.ok) {
+          const result = await response.json()
+          setProductCodes(result.data || [])
+        } else {
+          setError('Failed to load product codes')
+        }
+      } catch (err) {
+        setError('Failed to load product codes')
+      } finally {
+        setLoadingProducts(false)
+      }
+    }
+    fetchProductCodes()
+  }, [])
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value,
@@ -43,10 +70,13 @@ export function CreateOrderDialog({
     setError("")
 
     const newOrder = {
-      ...formData,
-      quantity: formData.quantity ? Number.parseInt(formData.quantity) : null,
+      project_id: formData.project_id,
+      supplier: formData.supplier || null,
       cost: formData.cost ? Number.parseFloat(formData.cost) : null,
-      due_delivery_date: formData.due_delivery_date || null,
+      product_name: formData.product_name || null,
+      comments: formData.comments || null,
+      order_type: formData.order_type || null,
+      quantity: formData.quantity ? Number.parseInt(formData.quantity) : null,
     }
 
     const result = await onCreate(newOrder)
@@ -100,62 +130,12 @@ export function CreateOrderDialog({
                 />
               </div>
               <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Order Number *</label>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Supplier</label>
                 <Input
-                  name="order_number"
-                  value={formData.order_number}
+                  name="supplier"
+                  value={formData.supplier}
                   onChange={handleChange}
-                  required
-                  placeholder="e.g., ORD-2025-001"
-                  className="bg-white text-gray-900"
-                  style={{ borderColor: '#8d9499' }}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Product *</label>
-                <Input
-                  name="product"
-                  value={formData.product}
-                  onChange={handleChange}
-                  required
-                  placeholder="Product type"
-                  className="bg-white text-gray-900"
-                  style={{ borderColor: '#8d9499' }}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Product Name</label>
-                <Input
-                  name="product_name"
-                  value={formData.product_name}
-                  onChange={handleChange}
-                  placeholder="Product name"
-                  className="bg-white text-gray-900"
-                  style={{ borderColor: '#8d9499' }}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Order Type</label>
-                <select
-                  name="order_type"
-                  value={formData.order_type}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 rounded-md bg-white text-gray-900"
-                  style={{ border: '1px solid #8d9499' }}
-                >
-                  <option value="standard">Standard</option>
-                  <option value="express">Express</option>
-                  <option value="custom">Custom</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Quantity</label>
-                <Input
-                  name="quantity"
-                  type="number"
-                  value={formData.quantity}
-                  onChange={handleChange}
-                  placeholder="0"
+                  placeholder="Supplier name"
                   className="bg-white text-gray-900"
                   style={{ borderColor: '#8d9499' }}
                 />
@@ -174,18 +154,62 @@ export function CreateOrderDialog({
                 />
               </div>
               <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Supplier</label>
-                <Input name="supplier" value={formData.supplier} onChange={handleChange} placeholder="Supplier name" className="bg-white text-gray-900" style={{ borderColor: '#8d9499' }} />
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Product Name</label>
+                <select
+                  name="product_name"
+                  value={formData.product_name}
+                  onChange={handleChange}
+                  disabled={loadingProducts}
+                  className="w-full px-3 py-2 rounded-md bg-white text-gray-900 h-10"
+                  style={{ border: '1px solid #8d9499' }}
+                >
+                  <option value="">Select a product...</option>
+                  {productCodes.map((product) => (
+                    <option key={product.id} value={product.name}>
+                      {product.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Due Delivery Date</label>
-                <Input
-                  name="due_delivery_date"
-                  type="date"
-                  value={formData.due_delivery_date}
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Order Type</label>
+                <select
+                  name="order_type"
+                  value={formData.order_type}
                   onChange={handleChange}
+                  className="w-full px-3 py-2 rounded-md bg-white text-gray-900 h-10"
+                  style={{ border: '1px solid #8d9499' }}
+                >
+                  <option value="">Select order type...</option>
+                  <option value="Standard">Standard</option>
+                  <option value="Internal">Internal</option>
+                  <option value="Free of Charge">Free of Charge</option>
+                  <option value="Express">Express</option>
+                  <option value="Revision">Revision</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Quantity</label>
+                <Input
+                  name="quantity"
+                  type="number"
+                  value={formData.quantity}
+                  onChange={handleChange}
+                  placeholder="0"
                   className="bg-white text-gray-900"
                   style={{ borderColor: '#8d9499' }}
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Comments</label>
+                <Textarea
+                  name="comments"
+                  value={formData.comments}
+                  onChange={handleChange}
+                  placeholder="Add any additional comments..."
+                  className="bg-white text-gray-900"
+                  style={{ borderColor: '#8d9499' }}
+                  rows={3}
                 />
               </div>
             </div>

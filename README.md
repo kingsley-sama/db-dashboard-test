@@ -1,119 +1,166 @@
-# Next.js SaaS Starter
+# SupaBase Dashboard Tool
 
-This is a starter template for building a SaaS application using **Next.js** with support for authentication, Stripe integration for payments, and a dashboard for logged-in users.
-
-**Demo: [https://next-saas-start.vercel.app/](https://next-saas-start.vercel.app/)**
+A modern, intuitive dashboard for managing SupaBase databases with a cleaner and more user-friendly experience than the default SupaBase dashboard.
 
 ## Features
 
-- Marketing landing page (`/`) with animated Terminal element
-- Pricing page (`/pricing`) which connects to Stripe Checkout
-- Dashboard pages with CRUD operations on users/teams
-- Basic RBAC with Owner and Member roles
-- Subscription management with Stripe Customer Portal
-- Email/password authentication with JWTs stored to cookies
-- Global middleware to protect logged-in routes
-- Local middleware to protect Server Actions or validate Zod schemas
-- Activity logging system for any user events
+- **Orders Management**: Complete CRUD operations for orders with advanced filtering and search
+- **Product Management**: Dynamic product codes integration with dropdown selections
+- **Team Collaboration**: Role-based access control with Owner and Member roles
+- **Authentication**: Secure email/password authentication with JWT tokens
+- **Real-time Updates**: Automatic data synchronization across the dashboard
+- **Intuitive UI**: Clean, professional interface with company branding
 
 ## Tech Stack
 
 - **Framework**: [Next.js](https://nextjs.org/)
-- **Database**: [Postgres](https://www.postgresql.org/)
-- **ORM**: [Drizzle](https://orm.drizzle.team/)
-- **Payments**: [Stripe](https://stripe.com/)
+- **Database**: [Supabase](https://supabase.com/) (Postgres)
+- **Authentication**: Supabase Auth
 - **UI Library**: [shadcn/ui](https://ui.shadcn.com/)
+- **Styling**: Tailwind CSS
 
 ## Getting Started
 
+### Prerequisites
+
+- Node.js 18+ installed
+- Git installed
+- Access to the project repository
+
+### Initial Setup
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd saas-starter-main
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Set up environment variables**
+   
+   Create a `.env.local` file in the root directory with the required variables:
+   ```env
+   NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+   SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+   ```
+
+4. **Run the development server**
+   ```bash
+   npm run dev
+   ```
+
+5. **Open your browser**
+   
+   Navigate to [http://localhost:3000](http://localhost:3000) to see the application.
+
+## Contributing
+
+We follow a feature branch workflow. Please follow these steps to contribute to the project:
+
+### 1. Sync with Main Branch
+
+Always start by pulling the latest changes from the main branch:
+
 ```bash
-git clone https://github.com/nextjs/saas-starter
-cd saas-starter
-pnpm install
+git checkout main
+git pull origin main
 ```
 
-## Running Locally
+### 2. Create a Feature Branch
 
-[Install](https://docs.stripe.com/stripe-cli) and log in to your Stripe account:
-
-```bash
-stripe login
-```
-
-Use the included setup script to create your `.env` file:
+Create a new branch for your feature or fix using the naming convention `feat/feature-name`:
 
 ```bash
-pnpm db:setup
+git branch feat/your-feature-name
+git checkout feat/your-feature-name
 ```
 
-Run the database migrations and seed the database with a default user and team:
+Or use the shorthand:
 
 ```bash
-pnpm db:migrate
-pnpm db:seed
+git checkout -b feat/your-feature-name
 ```
 
-This will create the following user and team:
+### 3. Install Dependencies
 
-- User: `test@test.com`
-- Password: `admin123`
-
-You can also create new users through the `/sign-up` route.
-
-Finally, run the Next.js development server:
+Ensure all dependencies are up to date:
 
 ```bash
-pnpm dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser to see the app in action.
+### 4. Review Current Updates
 
-You can listen for Stripe webhooks locally through their CLI to handle subscription change events:
+Check out the current state of the UI and functionality to understand what's already implemented.
+
+### 5. Make Your Changes
+
+- Write clean, readable code
+- Follow the existing code style and conventions
+- Test your changes thoroughly
+- Ensure your code doesn't break existing functionality
+
+### 6. Commit Your Changes
+
+Write clear, descriptive commit messages:
 
 ```bash
-stripe listen --forward-to localhost:3000/api/stripe/webhook
+git add .
+git commit -m "feat: add your feature description"
 ```
 
-## Testing Payments
+### 7. Push to Remote
 
-To test Stripe payments, use the following test card details:
+Push your feature branch to the remote repository:
 
-- Card Number: `4242 4242 4242 4242`
-- Expiration: Any future date
-- CVC: Any 3-digit number
+```bash
+git push origin feat/your-feature-name
+```
 
-## Going to Production
+### 8. Create a Pull Request
 
-When you're ready to deploy your SaaS application to production, follow these steps:
+1. Go to the GitHub repository
+2. Click on "Pull Requests"
+3. Click "New Pull Request"
+4. Select your branch (`feat/your-feature-name`) to merge into `main`
+5. Fill in the PR template with:
+   - Description of changes
+   - Screenshots (if UI changes)
+   - Testing steps
+   - Any breaking changes
 
-### Set up a production Stripe webhook
+### 9. Code Review
 
-1. Go to the Stripe Dashboard and create a new webhook for your production environment.
-2. Set the endpoint URL to your production API route (e.g., `https://yourdomain.com/api/stripe/webhook`).
-3. Select the events you want to listen for (e.g., `checkout.session.completed`, `customer.subscription.updated`).
+- Your PR will be reviewed by the project maintainer
+- Address any requested changes
+- Once approved, your changes will be merged into main
 
-### Deploy to Vercel
+## Branch Naming Conventions
 
-1. Push your code to a GitHub repository.
-2. Connect your repository to [Vercel](https://vercel.com/) and deploy it.
-3. Follow the Vercel deployment process, which will guide you through setting up your project.
+- **Features**: `feat/feature-name`
+- **Bug Fixes**: `fix/bug-description`
+- **Documentation**: `docs/update-description`
+- **Refactoring**: `refactor/component-name`
 
-### Add environment variables
+## Commit Message Guidelines
 
-In your Vercel project settings (or during deployment), add all the necessary environment variables. Make sure to update the values for the production environment, including:
+Use conventional commit messages:
 
-1. `BASE_URL`: Set this to your production domain.
-2. `STRIPE_SECRET_KEY`: Use your Stripe secret key for the production environment.
-3. `STRIPE_WEBHOOK_SECRET`: Use the webhook secret from the production webhook you created in step 1.
-4. `POSTGRES_URL`: Set this to your production database URL.
-5. `AUTH_SECRET`: Set this to a random string. `openssl rand -base64 32` will generate one.
+- `feat:` New feature
+- `fix:` Bug fix
+- `docs:` Documentation changes
+- `style:` Code style changes (formatting, etc.)
+- `refactor:` Code refactoring
+- `test:` Adding or updating tests
+- `chore:` Maintenance tasks
 
-## Other Templates
-
-While this template is intentionally minimal and to be used as a learning resource, there are other paid versions in the community which are more full-featured:
-
-- https://achromatic.dev
-- https://shipfa.st
-- https://makerkit.dev
-- https://zerotoshipped.com
-- https://turbostarter.dev
+Example:
+```bash
+git commit -m "feat: add product dropdown to order creation form"
+git commit -m "fix: resolve uncontrolled input warning in Input component"
+```

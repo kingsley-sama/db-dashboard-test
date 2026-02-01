@@ -56,7 +56,7 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
     <div className="min-h-[100dvh] flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 bg-gray-50">
       <div className="sm:mx-auto sm:w-full sm:max-w-md lg:max-w-lg">
         <div className="flex justify-center">
-          <CircleIcon className="h-12 w-12 text-orange-500" />
+          <CircleIcon className="h-12 w-12" style={{ color: '#f05d5e' }} />
         </div>
         <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
           {mode === 'signin'
@@ -90,7 +90,8 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
                           alt="Avatar preview"
                           width={120}
                           height={120}
-                          className="w-28 h-28 sm:w-32 sm:h-32 rounded-full object-cover border-4 border-orange-500 shadow-lg"
+                          className="w-28 h-28 sm:w-32 sm:h-32 rounded-full object-cover shadow-lg"
+                          style={{ border: '4px solid #f05d5e' }}
                         />
                         <button
                           type="button"
@@ -104,10 +105,16 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
                     ) : (
                       <label
                         htmlFor="avatar"
-                        className="w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-gradient-to-br from-orange-50 to-orange-100 flex flex-col items-center justify-center border-4 border-dashed border-orange-300 cursor-pointer hover:border-orange-500 transition-all hover:scale-105 group"
+                        className="w-28 h-28 sm:w-32 sm:h-32 rounded-full flex flex-col items-center justify-center border-4 border-dashed cursor-pointer transition-all hover:scale-105 group"
+                        style={{ 
+                          background: 'linear-gradient(to bottom right, rgba(240, 93, 94, 0.1), rgba(240, 93, 94, 0.2))',
+                          borderColor: 'rgba(240, 93, 94, 0.5)'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.borderColor = '#f05d5e'}
+                        onMouseLeave={(e) => e.currentTarget.style.borderColor = 'rgba(240, 93, 94, 0.5)'}
                       >
-                        <Upload className="h-10 w-10 text-orange-500 group-hover:text-orange-600 mb-2" />
-                        <span className="text-xs text-orange-600 font-medium">Click to upload</span>
+                        <Upload className="h-10 w-10 mb-2" style={{ color: '#f05d5e' }} />
+                        <span className="text-xs font-medium" style={{ color: '#f05d5e' }}>Click to upload</span>
                       </label>
                     )}
                   </div>
@@ -122,9 +129,14 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
                         file:mr-4 file:py-3 file:px-6
                         file:rounded-full file:border-0
                         file:text-sm file:font-semibold
-                        file:bg-orange-500 file:text-white
-                        hover:file:bg-orange-600 file:cursor-pointer
+                        file:text-white
+                        file:cursor-pointer
                         file:transition-colors cursor-pointer"
+                      style={{ ['--file-bg' as any]: '#f05d5e' }}
+                      onMouseEnter={(e) => {
+                        const input = e.currentTarget as any;
+                        input.style.setProperty('--file-hover-bg', '#e04d4e');
+                      }}
                     />
                     <p className="mt-3 text-sm text-gray-600 leading-relaxed">
                       <span className="font-medium">Accepted formats:</span> PNG, JPG, GIF<br />
@@ -150,7 +162,16 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
                     autoComplete="name"
                     required
                     maxLength={100}
-                    className="appearance-none rounded-full relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-orange-500 focus:border-orange-500 focus:z-10 sm:text-sm"
+                    className="appearance-none rounded-full relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:z-10 sm:text-sm"
+                    style={{ ['--focus-ring' as any]: '#f05d5e', ['--focus-border' as any]: '#f05d5e' }}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = '#f05d5e';
+                      e.currentTarget.style.boxShadow = '0 0 0 3px rgba(240, 93, 94, 0.1)';
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = '';
+                      e.currentTarget.style.boxShadow = '';
+                    }}
                     placeholder="Enter your full name"
                   />
                 </div>
@@ -174,7 +195,16 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
                 defaultValue={state.email}
                 required
                 maxLength={50}
-                className="appearance-none rounded-full relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-orange-500 focus:border-orange-500 focus:z-10 sm:text-sm"
+                className="appearance-none rounded-full relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:z-10 sm:text-sm"
+                style={{ ['--focus-ring' as any]: '#f05d5e', ['--focus-border' as any]: '#f05d5e' }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = '#f05d5e';
+                  e.currentTarget.style.boxShadow = '0 0 0 3px rgba(240, 93, 94, 0.1)';
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = '';
+                  e.currentTarget.style.boxShadow = '';
+                }}
                 placeholder="Enter your email"
               />
             </div>
@@ -199,7 +229,16 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
                 required
                 minLength={8}
                 maxLength={100}
-                className="appearance-none rounded-full relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-orange-500 focus:border-orange-500 focus:z-10 sm:text-sm"
+                className="appearance-none rounded-full relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:z-10 sm:text-sm"
+                style={{ ['--focus-ring' as any]: '#f05d5e', ['--focus-border' as any]: '#f05d5e' }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = '#f05d5e';
+                  e.currentTarget.style.boxShadow = '0 0 0 3px rgba(240, 93, 94, 0.1)';
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = '';
+                  e.currentTarget.style.boxShadow = '';
+                }}
                 placeholder="Enter your password"
               />
             </div>
@@ -212,7 +251,15 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
           <div>
             <Button
               type="submit"
-              className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-full shadow-sm text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
+              className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-full shadow-sm text-sm font-medium text-white"
+              style={{ backgroundColor: '#f05d5e' }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e04d4e'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f05d5e'}
+              onFocus={(e) => {
+                e.currentTarget.style.outline = 'none';
+                e.currentTarget.style.boxShadow = '0 0 0 3px rgba(240, 93, 94, 0.3)';
+              }}
+              onBlur={(e) => e.currentTarget.style.boxShadow = ''}
               disabled={pending}
             >
               {pending ? (
@@ -254,7 +301,12 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
                 ? <Link href="/">
                   <Button
                     variant="outline"
-                    className="text-2xl bg-amber-700 rounded-full py-5 px-20 bg-background w-full flex justify-center py-2 px-4 border border-gray-300 rounded-full shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
+                    className="w-full flex justify-center py-2 px-4 border border-gray-300 rounded-full shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none"
+                    onFocus={(e) => {
+                      e.currentTarget.style.outline = 'none';
+                      e.currentTarget.style.boxShadow = '0 0 0 3px rgba(240, 93, 94, 0.3), 0 0 0 2px rgba(240, 93, 94, 0.1)';
+                    }}
+                    onBlur={(e) => e.currentTarget.style.boxShadow = ''}
                   >
                     <ArrowLeft className="ml-2 h-5 w-5 mr-2" />
                     Home

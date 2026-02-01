@@ -4,38 +4,52 @@ import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Plus, Search, Filter, RefreshCw } from "lucide-react"
+import { Plus, Search, Filter, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react"
 import { OrdersDataTable } from "@/components/orders-data-table"
 import { CreateOrderDialog } from "@/components/create-order-dialog"
 import { EditOrderDialog } from "@/components/edit-order-dialog"
 
 export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void }) {
   const [orders, setOrders] = useState<any[]>([])
-  const [filteredOrders, setFilteredOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [editingOrder, setEditingOrder] = useState<any>(null)
   const [filterType, setFilterType] = useState<string>("")
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 500,
+    total: 0,
+    totalPages: 0
+  })
 
-  // Fetch orders
+  // Fetch orders when page, search, or filter changes
   useEffect(() => {
-    fetchOrders()
-  }, [])
+    fetchOrders(currentPage)
+  }, [currentPage, searchTerm, filterType])
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (page = 1) => {
     setLoading(true)
     setError("")
     try {
-      const response = await fetch('/api/orders')
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: '500',
+      })
+      
+      if (searchTerm) params.append('search', searchTerm)
+      if (filterType) params.append('filterType', filterType)
+      
+      const response = await fetch(`/api/orders?${params.toString()}`)
       const result = await response.json()
 
       if (!response.ok) {
         setError(result.error || 'Failed to fetch orders')
       } else {
         setOrders(result.data || [])
-        setFilteredOrders(result.data || [])
+        setPagination(result.pagination || { page: 1, limit: 500, total: 0, totalPages: 0 })
         onOrdersChange?.()
       }
     } catch (err: any) {
@@ -45,28 +59,15 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
     }
   }
 
-  // Handle search and filter
+  // Reset to page 1 when search or filter changes
   useEffect(() => {
-    let result = orders
-
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase()
-      result = result.filter(
-        (order) =>
-          order.order_number?.toLowerCase().includes(term) ||
-          order.project_id?.toLowerCase().includes(term) ||
-          order.product?.toLowerCase().includes(term) ||
-          order.product_name?.toLowerCase().includes(term) ||
-          order.supplier?.toLowerCase().includes(term),
-      )
+    if (currentPage !== 1) {
+      setCurrentPage(1)
     }
+  }, [searchTerm, filterType])
 
-    if (filterType) {
-      result = result.filter((order) => order.order_type === filterType)
-    }
-
-    setFilteredOrders(result)
-  }, [searchTerm, filterType, orders])
+  // Handle search and filter
+  // Note: Search and filter are now handled on the backend across all data
 
   const handleCreateOrder = async (newOrder: any) => {
     try {
@@ -81,7 +82,7 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
       if (!response.ok) {
         return { success: false, error: result.error || 'Failed to create order' }
       } else {
-        setOrders([...orders, ...result.data])
+        await fetchOrders(currentPage) // Refresh current page
         setShowCreateDialog(false)
         onOrdersChange?.()
         return { success: true }
@@ -104,7 +105,7 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
       if (!response.ok) {
         return { success: false, error: result.error || 'Failed to update order' }
       } else {
-        setOrders(orders.map((order) => (order.id === updatedOrder.id ? { ...order, ...updatedOrder } : order)))
+        await fetchOrders(currentPage) // Refresh current page
         setEditingOrder(null)
         onOrdersChange?.()
         return { success: true }
@@ -112,6 +113,87 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
     } catch (err: any) {
       return { success: false, error: err.message }
     }
+  }
+
+  const handlePageChange = (newPage: number) => {
+    setCurrentPage(newPage)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  // Pagination component
+  const PaginationControls = () => {
+    if (pagination.totalPages <= 1) return null
+
+    return (
+      <div className="flex items-center justify-between p-4 border-t" style={{ borderColor: '#e5e5e5', backgroundColor: '#fafafa' }}>
+        <div className="flex items-center gap-3">
+          <div className="text-sm font-medium" style={{ color: '#012e64' }}>
+            Page {pagination.page} of {pagination.totalPages}
+          </div>
+          <div className="text-sm" style={{ color: '#5d6b88' }}>
+            ({orders.length} orders on this page)
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={currentPage === 1}
+            className="hover:bg-gray-50"
+            style={{ borderColor: '#8d9499', color: '#012e64' }}
+          >
+            <ChevronLeft className="w-4 h-4 mr-1" />
+            Previous
+          </Button>
+          
+          {/* Page Numbers */}
+          <div className="flex gap-1">
+            {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+              let pageNum;
+              if (pagination.totalPages <= 5) {
+                pageNum = i + 1;
+              } else if (currentPage <= 3) {
+                pageNum = i + 1;
+              } else if (currentPage >= pagination.totalPages - 2) {
+                pageNum = pagination.totalPages - 4 + i;
+              } else {
+                pageNum = currentPage - 2 + i;
+              }
+              
+              return (
+                <Button
+                  key={pageNum}
+                  variant={pageNum === currentPage ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => handlePageChange(pageNum)}
+                  className={pageNum === currentPage ? "text-white" : "hover:bg-gray-50"}
+                  style={
+                    pageNum === currentPage
+                      ? { backgroundColor: '#012e64' }
+                      : { borderColor: '#8d9499', color: '#012e64' }
+                  }
+                >
+                  {pageNum}
+                </Button>
+              );
+            })}
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={currentPage === pagination.totalPages}
+            className="hover:bg-gray-50"
+            style={{ borderColor: '#8d9499', color: '#012e64' }}
+          >
+            Next
+            <ChevronRight className="w-4 h-4 ml-1" />
+          </Button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -134,7 +216,7 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: '#8d9499' }} />
             <Input
               type="text"
-              placeholder="Search by order #, project, product, or supplier..."
+              placeholder="Search by project, order ID, product, or supplier..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10 bg-white"
@@ -143,7 +225,7 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
           </div>
           <div className="flex gap-2">
             <Button 
-              onClick={fetchOrders} 
+              onClick={() => fetchOrders(currentPage)} 
               variant="outline"
               className="hover:bg-gray-50"
               style={{ borderColor: '#8d9499', color: '#012e64' }}
@@ -158,6 +240,18 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
               <Plus className="w-4 h-4 mr-2" />
               New Order
             </Button>
+          </div>
+        </div>
+
+        {/* Total Count Display */}
+        <div className="flex items-center justify-center py-3 px-4 rounded-lg" style={{ backgroundColor: '#f0f7ff', border: '1px solid #d0e7ff' }}>
+          <div className="text-center">
+            <div className="text-3xl font-bold" style={{ color: '#012e64' }}>
+              {pagination.total.toLocaleString()}
+            </div>
+            <div className="text-sm font-medium" style={{ color: '#5d6b88' }}>
+              Total Orders{searchTerm || filterType ? ' (filtered)' : ''}
+            </div>
           </div>
         </div>
 
@@ -196,14 +290,22 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
           </div>
         </div>
 
-        {/* Results Info */}
+        {/* Current Page Info */}
         <div className="flex items-center justify-between text-sm">
           <span style={{ color: '#5d6b88' }}>
-            Showing <span className="font-semibold" style={{ color: '#012e64' }}>{filteredOrders.length}</span> of{" "}
-            <span className="font-semibold" style={{ color: '#012e64' }}>{orders.length}</span> orders
+            Showing <span className="font-semibold" style={{ color: '#012e64' }}>{orders.length}</span> orders on this page
           </span>
+          {pagination.totalPages > 1 && (
+            <span style={{ color: '#5d6b88' }}>
+              Page <span className="font-semibold" style={{ color: '#012e64' }}>{pagination.page}</span> of{" "}
+              <span className="font-semibold" style={{ color: '#012e64' }}>{pagination.totalPages}</span>
+            </span>
+          )}
         </div>
       </div>
+
+      {/* Top Pagination */}
+      <PaginationControls />
 
       {/* Table */}
       <div className="flex-1 overflow-auto">
@@ -214,7 +316,7 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
               <p style={{ color: '#5d6b88' }}>Loading orders...</p>
             </div>
           </div>
-        ) : filteredOrders.length === 0 ? (
+        ) : orders.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
               <p className="text-lg font-medium" style={{ color: '#012e64' }}>No orders found</p>
@@ -222,9 +324,12 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
             </div>
           </div>
         ) : (
-          <OrdersDataTable orders={filteredOrders} onEdit={setEditingOrder} />
+          <OrdersDataTable orders={orders} onEdit={setEditingOrder} />
         )}
       </div>
+
+      {/* Bottom Pagination */}
+      <PaginationControls />
 
       {/* Create Dialog */}
       {showCreateDialog && (

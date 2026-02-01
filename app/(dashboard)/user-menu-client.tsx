@@ -40,14 +40,14 @@ export function UserMenuClient({ isSignedIn }: { isSignedIn: boolean }) {
   return (
     <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
       <DropdownMenuTrigger asChild>
-        <button className="flex items-center gap-3 px-3 py-2 rounded-full bg-white hover:bg-gray-50 border-2 border-gray-200 hover:border-orange-500 transition-all shadow-sm hover:shadow-md">
+        <button className="flex items-center gap-3 px-3 py-2 rounded-full bg-white hover:bg-gray-50 border-2 border-gray-200 transition-all shadow-sm hover:shadow-md" style={{ ['--hover-border-color' as any]: '#f05d5e' }} onMouseEnter={(e) => e.currentTarget.style.borderColor = '#f05d5e'} onMouseLeave={(e) => e.currentTarget.style.borderColor = ''}>
           <Avatar className="size-10">
             <AvatarImage 
               src={user.avatarUrl || undefined} 
               alt={user.name || user.email}
               className="object-cover"
             />
-            <AvatarFallback className="bg-gradient-to-br from-orange-500 to-orange-600 text-white font-semibold text-sm">
+            <AvatarFallback className="text-white font-semibold text-sm" style={{ background: 'linear-gradient(to bottom right, #f05d5e, #e04d4e)' }}>
               {user.name
                 ? user.name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
                 : user.email.substring(0, 2).toUpperCase()}
