@@ -298,8 +298,7 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
               className=""
             >
               {mode === 'signin'
-                ? <Link href="/">
-                  <Button
+                ? <Button
                     variant="outline"
                     className="w-full flex justify-center py-2 px-4 border border-gray-300 rounded-full shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none"
                     onFocus={(e) => {
@@ -311,7 +310,6 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
                     <ArrowLeft className="ml-2 h-5 w-5 mr-2" />
                     Home
                   </Button>
-                </Link>
                 : 'Sign in to existing account'}
             </Link>
           </div>
