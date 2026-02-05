@@ -1,0 +1,19 @@
+- customer_ranking
+- company_name
+- order_type (product_name)
+- date_ordered (created_at)
+- pm
+- questionaire arrived 
+- deposit
+- supplier()
+- cost 
+- db_margin 
+- date entry final docs
+- delivery date according to offer
+- customer_type
+- biganto (yes/ no field)
+- project_status
+- interior upsell tried(yes/ no)
+- interior upsell success(yes/ no)
+- pm_type
+- net_revenue
