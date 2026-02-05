@@ -8,7 +8,7 @@ export const appConfig = {
   name: process.env.NEXT_PUBLIC_APP_NAME || 'Next.js SaaS Starter',
   
   // Description
-  description: 'Get started quickly with Next.js, Postgres, and Stripe.',
+  description: 'Get started quickly with Next.js and Postgres.',
   
   // URLs
   baseUrl: process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000',
