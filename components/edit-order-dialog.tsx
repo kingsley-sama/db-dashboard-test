@@ -81,8 +81,6 @@ export function EditOrderDialog({
       date_information_complete: formData.date_information_complete || null,
       product_type: formData.product_type || null,
       unit_price: formData.unit_price ? Number.parseFloat(formData.unit_price) : null,
-      order_number: formData.order_number || null,
-      ap_epcs_invoicing: formData.ap_epcs_invoicing || null,
       questionnaire_received: formData.questionnaire_received || null,
       deposit: formData.deposit || null,
     }
@@ -210,27 +208,6 @@ export function EditOrderDialog({
                   <option value="Variation">Variation</option>
                   <option value="Revision">Revision</option>
                 </select>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Order Number</label>
-                <Input
-                  name="order_number"
-                  value={formData.order_number || ""}
-                  onChange={handleChange}
-                  className="bg-white"
-                  style={{ borderColor: '#8d9499', color: '#012e64' }}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>AP/EPCS Invoicing</label>
-                <Input
-                  name="ap_epcs_invoicing"
-                  value={formData.ap_epcs_invoicing || ""}
-                  onChange={handleChange}
-                  className="bg-white"
-                  style={{ borderColor: '#8d9499', color: '#012e64' }}
-                />
               </div>
 
               <div>

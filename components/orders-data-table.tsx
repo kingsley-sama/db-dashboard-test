@@ -11,9 +11,9 @@ const displayFields = [
   { key: "supplier", label: "Supplier", width: "min-w-[150px]" },
   { key: "cost", label: "Cost", width: "min-w-[120px]" },
   { key: "product_name", label: "Product Name", width: "min-w-[150px]" },
-  { key: "comments", label: "Comments", width: "min-w-[200px]" },
+  { key: "comments", label: "Comments", width: "min-w-[20px]", maxWidth: "900px" },
   { key: "PM", label: "PM", width: "min-w-[100px]" },
-  { key: "company_name", label: "Company Name", width: "min-w-[150px]" },
+  { key: "company_name", label: "Company Name", width: "min-w-[55px]",  maxWidth:"400px" },
   { key: "client_rating", label: "Client Rating", width: "min-w-[130px]" },
   { key: "questionnaire_received", label: "Questionnaire", width: "min-w-[130px]" },
   { key: "deposit", label: "Deposit", width: "min-w-[100px]" },
@@ -104,7 +104,11 @@ export function OrdersDataTable({ orders, onEdit }: { orders: any[]; onEdit: (or
                   style={{ color: '#012e64', borderRight: '1px solid #f0f0f0' }}
                   title={String(order[field.key] || '')}
                 >
-                  {formatValue(order[field.key], field.key)}
+                  {field.maxWidth ? (
+                    <div style={{ maxWidth: field.maxWidth, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {formatValue(order[field.key], field.key)}
+                    </div>
+                  ) : formatValue(order[field.key], field.key)}
                 </td>
               ))}
               <td 

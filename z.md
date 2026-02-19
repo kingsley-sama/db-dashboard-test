@@ -1,0 +1,10 @@
+- search by name
+- rating should be provided
+- prices should be provided by lidia
+- invoicing from lidia
+- remove client ratings
+- she want's to se the columns more to the right
+- remove the pm field they should not be able to modify it
+- make the suppliers name a dropdown
+- remove sales type field - discus who will manage it with lidia - let them populate the sales field
+- sometimes some clients don't follow through with proposal

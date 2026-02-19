@@ -33,10 +33,7 @@ export function CreateOrderDialog({
     quantity: "",
     product_type: "",
     unit_price: "",
-    order_number: "",
-    ap_epcs_invoicing: "",
-    questionnaire_received: "",
-    deposit: "",
+
   })
   const [productCodes, setProductCodes] = useState<ProductCode[]>([])
   const [loading, setLoading] = useState(false)
@@ -85,10 +82,7 @@ export function CreateOrderDialog({
       quantity: formData.quantity ? Number.parseInt(formData.quantity) : null,
       product_type: formData.product_type || null,
       unit_price: formData.unit_price ? Number.parseFloat(formData.unit_price) : null,
-      order_number: formData.order_number || null,
-      ap_epcs_invoicing: formData.ap_epcs_invoicing || null,
-      questionnaire_received: formData.questionnaire_received || null,
-      deposit: formData.deposit || null,
+
     }
 
     const result = await onCreate(newOrder)
@@ -238,58 +232,6 @@ export function CreateOrderDialog({
                   <option value="Standard">Standard</option>
                   <option value="Variation">Variation</option>
                   <option value="Revision">Revision</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Order Number</label>
-                <Input
-                  name="order_number"
-                  value={formData.order_number}
-                  onChange={handleChange}
-                  placeholder="Order number"
-                  className="bg-white text-gray-900"
-                  style={{ borderColor: '#8d9499' }}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>AP/EPCS Invoicing</label>
-                <Input
-                  name="ap_epcs_invoicing"
-                  value={formData.ap_epcs_invoicing}
-                  onChange={handleChange}
-                  placeholder="Invoicing info"
-                  className="bg-white text-gray-900"
-                  style={{ borderColor: '#8d9499' }}
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Questionnaire Received</label>
-                <select
-                  name="questionnaire_received"
-                  value={formData.questionnaire_received}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 rounded-md bg-white text-gray-900 h-10"
-                  style={{ border: '1px solid #8d9499' }}
-                >
-                  <option value="">Select...</option>
-                  <option value="Yes">Yes</option>
-                  <option value="No">No</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Deposit</label>
-                <select
-                  name="deposit"
-                  value={formData.deposit}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 rounded-md bg-white text-gray-900 h-10"
-                  style={{ border: '1px solid #8d9499' }}
-                >
-                  <option value="">Select...</option>
-                  <option value="Yes">Yes</option>
-                  <option value="No">No</option>
                 </select>
               </div>
 
