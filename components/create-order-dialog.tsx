@@ -32,17 +32,11 @@ export function CreateOrderDialog({
     order_type: "",
     quantity: "",
     product_type: "",
-    sale_type: "",
     unit_price: "",
     order_number: "",
     ap_epcs_invoicing: "",
-    company_name: "",
-    client_rating: "",
     questionnaire_received: "",
     deposit: "",
-    PM: "",
-    db_1: "",
-    net_sum: "",
   })
   const [productCodes, setProductCodes] = useState<ProductCode[]>([])
   const [loading, setLoading] = useState(false)
@@ -90,17 +84,11 @@ export function CreateOrderDialog({
       order_type: formData.order_type || null,
       quantity: formData.quantity ? Number.parseInt(formData.quantity) : null,
       product_type: formData.product_type || null,
-      sale_type: formData.sale_type || null,
       unit_price: formData.unit_price ? Number.parseFloat(formData.unit_price) : null,
       order_number: formData.order_number || null,
       ap_epcs_invoicing: formData.ap_epcs_invoicing || null,
-      company_name: formData.company_name || null,
-      client_rating: formData.client_rating || null,
       questionnaire_received: formData.questionnaire_received || null,
       deposit: formData.deposit || null,
-      PM: formData.PM || null,
-      db_1: formData.db_1 ? Number.parseFloat(formData.db_1) : null,
-      net_sum: formData.net_sum ? Number.parseFloat(formData.net_sum) : null,
     }
 
     const result = await onCreate(newOrder)
@@ -252,20 +240,7 @@ export function CreateOrderDialog({
                   <option value="Revision">Revision</option>
                 </select>
               </div>
-              <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Sale Type</label>
-                <select
-                  name="sale_type"
-                  value={formData.sale_type}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 rounded-md bg-white text-gray-900 h-10"
-                  style={{ border: '1px solid #8d9499' }}
-                >
-                  <option value="">Select type...</option>
-                  <option value="Standard">Standard</option>
-                  <option value="PM Upsell">PM Upsell</option>
-                </select>
-              </div>
+
               <div>
                 <label className="text-sm font-medium" style={{ color: '#012e64' }}>Order Number</label>
                 <Input
@@ -288,45 +263,7 @@ export function CreateOrderDialog({
                   style={{ borderColor: '#8d9499' }}
                 />
               </div>
-              <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Company Name</label>
-                <Input
-                  name="company_name"
-                  value={formData.company_name}
-                  onChange={handleChange}
-                  placeholder="Company name"
-                  className="bg-white text-gray-900"
-                  style={{ borderColor: '#8d9499' }}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Client Rating</label>
-                <select
-                  name="client_rating"
-                  value={formData.client_rating}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 rounded-md bg-white text-gray-900 h-10"
-                  style={{ border: '1px solid #8d9499' }}
-                >
-                  <option value="">Select rating...</option>
-                  <option value="15 - P">15 - P</option>
-                  <option value="14 - PU">14 - PU</option>
-                  <option value="13 - PULS">13 - PULS</option>
-                  <option value="12 - PUS">12 - PUS</option>
-                  <option value="11 - PUL">11 - PUL</option>
-                  <option value="10 - ULS">10 - ULS</option>
-                  <option value="9 - US">9 - US</option>
-                  <option value="8 - U">8 - U</option>
-                  <option value="7 - UL">7 - UL</option>
-                  <option value="6 - PLS">6 - PLS</option>
-                  <option value="5 - PS">5 - PS</option>
-                  <option value="4 - PL">4 - PL</option>
-                  <option value="3 - LS">3 - LS</option>
-                  <option value="2 - S">2 - S</option>
-                  <option value="1 - L">1 - L</option>
-                  <option value="0">0</option>
-                </select>
-              </div>
+
               <div>
                 <label className="text-sm font-medium" style={{ color: '#012e64' }}>Questionnaire Received</label>
                 <select
@@ -355,53 +292,7 @@ export function CreateOrderDialog({
                   <option value="No">No</option>
                 </select>
               </div>
-              <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Project Manager (PM)</label>
-                <select
-                  name="PM"
-                  value={formData.PM}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 rounded-md bg-white text-gray-900 h-10"
-                  style={{ border: '1px solid #8d9499' }}
-                >
-                  <option value="">Select PM...</option>
-                  <option value="Viktoria">Viktoria</option>
-                  <option value="Sonia">Sonia</option>
-                  <option value="Vivien">Vivien</option>
-                  <option value="Nesrin">Nesrin</option>
-                  <option value="Ani">Ani</option>
-                  <option value="Viktoria & Sonia">Viktoria & Sonia</option>
-                  <option value="Viktoria und Vivien">Viktoria und Vivien</option>
-                  <option value="Sonia und Vivien">Sonia und Vivien</option>
-                  <option value="Sonia & CH">Sonia & CH</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>DB Margin (db_1)</label>
-                <Input
-                  name="db_1"
-                  type="number"
-                  step="0.01"
-                  value={formData.db_1}
-                  onChange={handleChange}
-                  placeholder="0.00"
-                  className="bg-white text-gray-900"
-                  style={{ borderColor: '#8d9499' }}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Net Revenue (net_sum)</label>
-                <Input
-                  name="net_sum"
-                  type="number"
-                  step="0.01"
-                  value={formData.net_sum}
-                  onChange={handleChange}
-                  placeholder="0.00"
-                  className="bg-white text-gray-900"
-                  style={{ borderColor: '#8d9499' }}
-                />
-              </div>
+
               <div className="col-span-2">
                 <label className="text-sm font-medium" style={{ color: '#012e64' }}>Comments</label>
                 <Textarea

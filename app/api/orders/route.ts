@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
     const offset = (page - 1) * limit;
     const search = searchParams.get('search') || '';
     const filterType = searchParams.get('filterType') || '';
+    const filterPM = searchParams.get('filterPM') || '';
 
     // Build query with filters
     let query = supabaseAdmin.from('orders').select('*', { count: 'exact' });
@@ -30,13 +31,19 @@ export async function GET(request: NextRequest) {
         `product.ilike.%${search}%,` +
         `product_name.ilike.%${search}%,` +
         `supplier.ilike.%${search}%,` +
-        `order_number.ilike.%${search}%`
+        `order_number.ilike.%${search}%,` +
+        `company_name.ilike.%${search}%`
       );
     }
 
     // Apply order type filter
     if (filterType) {
       query = query.eq('order_type', filterType);
+    }
+
+    // Apply PM filter
+    if (filterPM) {
+      query = query.eq('PM', filterPM);
     }
 
     // Get total count with filters applied
@@ -57,12 +64,17 @@ export async function GET(request: NextRequest) {
         `product.ilike.%${search}%,` +
         `product_name.ilike.%${search}%,` +
         `supplier.ilike.%${search}%,` +
-        `order_number.ilike.%${search}%`
+        `order_number.ilike.%${search}%,` +
+        `company_name.ilike.%${search}%`
       );
     }
 
     if (filterType) {
       dataQuery = dataQuery.eq('order_type', filterType);
+    }
+
+    if (filterPM) {
+      dataQuery = dataQuery.eq('PM', filterPM);
     }
 
     const { data, error } = await dataQuery
