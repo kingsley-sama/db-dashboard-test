@@ -1,6 +1,6 @@
 # SupaBase Dashboard Tool
 
-A modern, intuitive dashboard for managing SupaBase databases with a cleaner and more user-friendly experience than the default SupaBase dashboard.
+A modern, intuitive dashboard for managing SupaBase databases with a cleaner and more user-friendly experience.
 
 ## Features
 
