@@ -20,8 +20,8 @@ export async function GET(request: NextRequest) {
     const filterType = searchParams.get('filterType') || '';
     const filterPM = searchParams.get('filterPM') || '';
 
-    // Build query with filters
-    let query = supabaseAdmin.from('orders').select('*', { count: 'exact' });
+    // Build query with filters - join with projects for delivery_completion_date and project_name
+    let query = supabaseAdmin.from('orders').select('*, projects(delivery_completion_date, project_name)', { count: 'exact' });
 
     // Apply search filter across multiple fields
     if (search) {
@@ -53,8 +53,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: countError.message }, { status: 500 });
     }
 
-    // Fetch paginated data with filters
-    let dataQuery = supabaseAdmin.from('orders').select('*');
+    // Fetch paginated data with filters - join with projects for delivery_completion_date and project_name
+    let dataQuery = supabaseAdmin.from('orders').select('*, projects(delivery_completion_date, project_name)');
 
     // Apply same filters to data query
     if (search) {
@@ -85,8 +85,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    // Flatten projects fields into each order row
+    const flattenedData = (data || []).map((order: any) => {
+      const { projects, ...rest } = order;
+      return {
+        ...rest,
+        delivery_completion_date: projects?.delivery_completion_date || null,
+        project_name: projects?.project_name || null,
+      };
+    });
+
     return NextResponse.json({ 
-      data,
+      data: flattenedData,
       pagination: {
         page,
         limit,

@@ -81,6 +81,7 @@ export function EditOrderDialog({
       date_information_complete: formData.date_information_complete || null,
       product_type: formData.product_type || null,
       unit_price: formData.unit_price ? Number.parseFloat(formData.unit_price) : null,
+      // These fields are saved to the projects table via the API
       questionnaire_received: formData.questionnaire_received || null,
       deposit: formData.deposit || null,
     }

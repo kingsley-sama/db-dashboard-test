@@ -4,41 +4,45 @@ import { Edit2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 const displayFields = [
-  { key: "project_id", label: "Project ID", width: "min-w-[120px]" },
-  { key: "order_id", label: "Order ID", width: "min-w-[120px]" },
-  { key: "order_number", label: "Order Number", width: "min-w-[140px]" },
-  { key: "person_id", label: "Person ID", width: "min-w-[120px]" },
-  { key: "supplier", label: "Supplier", width: "min-w-[150px]" },
-  { key: "cost", label: "Cost", width: "min-w-[120px]" },
-  { key: "product_name", label: "Product Name", width: "min-w-[150px]" },
-  { key: "comments", label: "Comments", width: "min-w-[20px]", maxWidth: "900px" },
+  // User-specified column order
+  { key: "person_id", label: "Customer Number", width: "min-w-[140px]" },
+  { key: "client_rating", label: "Customer Ranking", width: "min-w-[150px]" },
+  { key: "company_name", label: "Name", width: "min-w-[150px]", maxWidth: "400px" },
+  { key: "project_name", label: "Project Name", width: "min-w-[150px]", maxWidth: "400px" },
+  { key: "created_at", label: "Date Order Created", width: "min-w-[160px]" },
   { key: "PM", label: "PM", width: "min-w-[100px]" },
-  { key: "company_name", label: "Company Name", width: "min-w-[55px]",  maxWidth:"400px" },
-  { key: "client_rating", label: "Client Rating", width: "min-w-[130px]" },
   { key: "questionnaire_received", label: "Questionnaire", width: "min-w-[130px]" },
   { key: "deposit", label: "Deposit", width: "min-w-[100px]" },
+  { key: "supplier", label: "Supplier", width: "min-w-[150px]" },
+  { key: "order_id", label: "Order ID", width: "min-w-[120px]" },
+  { key: "cost", label: "Cost", width: "min-w-[120px]" },
+  { key: "db_1", label: "DB 1 Margin", width: "min-w-[120px]" },
+  { key: "date_information_complete", label: "Date Entry Final Docs", width: "min-w-[170px]" },
+  { key: "due_delivery_date", label: "Due Delivery Date", width: "min-w-[150px]" },
+  { key: "delivery_1_date", label: "Delivery Date 1", width: "min-w-[140px]" },
+  { key: "delivery_2_date", label: "Delivery Date 2", width: "min-w-[140px]" },
+  { key: "delivery_3_date", label: "Delivery Date 3", width: "min-w-[140px]" },
+  { key: "delivery_4_date", label: "Delivery Date 4", width: "min-w-[140px]" },
+  { key: "delivery_completion_date", label: "Date Delivery Complete", width: "min-w-[180px]" },
+  { key: "net_sum", label: "Net Revenue", width: "min-w-[120px]" },
+  // Remaining fields
+  { key: "project_id", label: "Project ID", width: "min-w-[120px]" },
+  { key: "order_number", label: "Order Number", width: "min-w-[140px]" },
+  { key: "product_name", label: "Product Name", width: "min-w-[150px]" },
+  { key: "comments", label: "Comments", width: "min-w-[20px]", maxWidth: "900px" },
   { key: "product", label: "Product", width: "min-w-[120px]" },
   { key: "product_type", label: "Product Type", width: "min-w-[120px]" },
   { key: "order_type", label: "Order Type", width: "min-w-[120px]" },
   { key: "sale_type", label: "Sale Type", width: "min-w-[120px]" },
   { key: "quantity", label: "Quantity", width: "min-w-[100px]" },
   { key: "unit_price", label: "Unit Price", width: "min-w-[120px]" },
-  { key: "net_sum", label: "Net Sum", width: "min-w-[120px]" },
   { key: "gross_sum", label: "Gross Sum", width: "min-w-[120px]" },
-  { key: "db_1", label: "DB 1", width: "min-w-[100px]" },
   { key: "profit_margin", label: "Profit Margin", width: "min-w-[130px]" },
   { key: "roi", label: "ROI", width: "min-w-[100px]" },
   { key: "ap_epcs_invoicing", label: "AP EPCS Invoicing", width: "min-w-[150px]" },
-  { key: "date_information_complete", label: "Info Complete", width: "min-w-[140px]" },
-  { key: "due_delivery_date", label: "Due Delivery", width: "min-w-[140px]" },
-  { key: "delivery_1_date", label: "Delivery 1", width: "min-w-[140px]" },
-  { key: "delivery_2_date", label: "Delivery 2", width: "min-w-[140px]" },
-  { key: "delivery_3_date", label: "Delivery 3", width: "min-w-[140px]" },
-  { key: "delivery_4_date", label: "Delivery 4", width: "min-w-[140px]" },
   { key: "delay_first_delivery", label: "Delay 1st Delivery", width: "min-w-[150px]" },
   { key: "delay_first_revision", label: "Delay 1st Revision", width: "min-w-[150px]" },
   { key: "delay_second_revision", label: "Delay 2nd Revision", width: "min-w-[150px]" },
-  { key: "created_at", label: "Created At", width: "min-w-[160px]" },
   { key: "updated_at", label: "Updated At", width: "min-w-[160px]" },
 ]
 
@@ -46,7 +50,7 @@ export function OrdersDataTable({ orders, onEdit }: { orders: any[]; onEdit: (or
   const formatValue = (value: any, key: string) => {
     if (value === null || value === undefined) return "-"
     
-    if (key.includes("date") && value) {
+    if ((key.includes("date") || key === "created_at" || key === "updated_at") && value) {
       try {
         return new Date(value).toLocaleDateString()
       } catch {

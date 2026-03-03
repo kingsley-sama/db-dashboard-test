@@ -17,10 +17,34 @@ export async function PUT(
     const body = await request.json();
     const { id } = await params;
 
-    // Update order using admin client
+    // Separate project_id from order fields (keep questionnaire/deposit in both)
+    const { project_id, ...orderFields } = body;
+
+    // Sync questionnaire_received and deposit to the projects table
+    const { questionnaire_received, deposit } = body;
+    if ((questionnaire_received !== undefined || deposit !== undefined) && project_id) {
+      const projectUpdate: Record<string, string | null> = {};
+      if (questionnaire_received !== undefined) {
+        projectUpdate.questionnaire_received = questionnaire_received || null;
+      }
+      if (deposit !== undefined) {
+        projectUpdate.deposit = deposit || null;
+      }
+
+      const { error: projectError } = await supabaseAdmin
+        .from('projects')
+        .update(projectUpdate)
+        .eq('project_id', project_id);
+
+      if (projectError) {
+        return NextResponse.json({ error: `Failed to update project: ${projectError.message}` }, { status: 500 });
+      }
+    }
+
+    // Update order (including questionnaire_received and deposit so the table stays in sync)
     const { data, error } = await supabaseAdmin
       .from('orders')
-      .update(body)
+      .update(orderFields)
       .eq('id', id)
       .select();
 
