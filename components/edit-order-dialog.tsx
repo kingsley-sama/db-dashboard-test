@@ -81,6 +81,9 @@ export function EditOrderDialog({
       date_information_complete: formData.date_information_complete || null,
       product_type: formData.product_type || null,
       unit_price: formData.unit_price ? Number.parseFloat(formData.unit_price) : null,
+      delay_first_delivery: formData.delay_first_delivery !== "" && formData.delay_first_delivery != null ? Number.parseInt(formData.delay_first_delivery) : null,
+      delay_first_revision: formData.delay_first_revision !== "" && formData.delay_first_revision != null ? Number.parseInt(formData.delay_first_revision) : null,
+      delay_second_revision: formData.delay_second_revision !== "" && formData.delay_second_revision != null ? Number.parseInt(formData.delay_second_revision) : null,
       // These fields are saved to the projects table via the API
       questionnaire_received: formData.questionnaire_received || null,
       deposit: formData.deposit || null,
@@ -252,6 +255,45 @@ export function EditOrderDialog({
                   rows={3}
                 />
               </div>
+
+              {/* Delay Fields */}
+              <div className="col-span-2">
+                <h3 className="text-base font-semibold mb-3" style={{ color: '#012e64' }}>Delays</h3>
+              </div>
+              <div>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Delay 1st Delivery (days)</label>
+                <Input
+                  name="delay_first_delivery"
+                  type="number"
+                  value={formData.delay_first_delivery ?? ""}
+                  onChange={handleChange}
+                  className="bg-white"
+                  style={{ borderColor: '#8d9499', color: '#012e64' }}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Delay 1st Revision (days)</label>
+                <Input
+                  name="delay_first_revision"
+                  type="number"
+                  value={formData.delay_first_revision ?? ""}
+                  onChange={handleChange}
+                  className="bg-white"
+                  style={{ borderColor: '#8d9499', color: '#012e64' }}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Delay 2nd Revision (days)</label>
+                <Input
+                  name="delay_second_revision"
+                  type="number"
+                  value={formData.delay_second_revision ?? ""}
+                  onChange={handleChange}
+                  className="bg-white"
+                  style={{ borderColor: '#8d9499', color: '#012e64' }}
+                />
+              </div>
+              <div>{/* spacer for grid alignment */}</div>
 
               {/* Delivery Date Fields */}
               <div className="col-span-2">

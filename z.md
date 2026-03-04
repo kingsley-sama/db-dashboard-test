@@ -1,10 +1,20 @@
-- search by name
-- rating should be provided
-- prices should be provided by lidia
-- invoicing from lidia
-- remove client ratings
-- she want's to se the columns more to the right
-- remove the pm field they should not be able to modify it
-- make the suppliers name a dropdown
-- remove sales type field - discus who will manage it with lidia - let them populate the sales field
-- sometimes some clients don't follow through with proposal
+customere number 
+customer ranking 
+name 
+project name 
+date order created 
+pm 
+questionaire
+deposit
+supplier 
+order_id
+cost 
+db 1 margin
+date of entry final docs
+due delivery date
+delivery date 1
+delivery date 2
+delivery date 3
+delivery date 4
+date delivery complete 
+net revenue
