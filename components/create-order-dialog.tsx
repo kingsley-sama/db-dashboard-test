@@ -137,14 +137,20 @@ export function CreateOrderDialog({
               </div>
               <div>
                 <label className="text-sm font-medium" style={{ color: '#012e64' }}>Supplier</label>
-                <Input
+                <select
                   name="supplier"
                   value={formData.supplier}
                   onChange={handleChange}
-                  placeholder="Supplier name"
-                  className="bg-white text-gray-900"
-                  style={{ borderColor: '#8d9499' }}
-                />
+                  className="w-full px-3 py-2 rounded-md bg-white text-gray-900 h-10"
+                  style={{ border: '1px solid #8d9499' }}
+                >
+                  <option value="">Select supplier...</option>
+                  <option value="Studio98">Studio98</option>
+                  <option value="Khoa">Khoa</option>
+                  <option value="Nhat">Nhat</option>
+                  <option value="3D Sakura">3D Sakura</option>
+                  <option value="Boris">Boris</option>
+                </select>
               </div>
               <div>
                 <label className="text-sm font-medium" style={{ color: '#012e64' }}>Cost</label>
