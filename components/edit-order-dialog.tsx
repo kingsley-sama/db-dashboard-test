@@ -25,7 +25,16 @@ export function EditOrderDialog({
   onClose: () => void
   onUpdate: (order: any) => Promise<{ success: boolean; error?: string }>
 }) {
-  const [formData, setFormData] = useState(order)
+  const normalizeProductType = (val: string | null | undefined) => {
+    if (!val) return ""
+    const map: Record<string, string> = { standard: "Standard", variation: "Variation", revision: "Revision" }
+    return map[val.toLowerCase()] ?? val
+  }
+
+  const [formData, setFormData] = useState({
+    ...order,
+    product_type: normalizeProductType(order.product_type),
+  })
   const [productCodes, setProductCodes] = useState<ProductCode[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -87,6 +96,13 @@ export function EditOrderDialog({
       // These fields are saved to the projects table via the API
       questionnaire_received: formData.questionnaire_received || null,
       deposit: formData.deposit || null,
+      // New PM dashboard fields
+      pm_type: formData.pm_type || null,
+      supplier_payment: formData.supplier_payment || null,
+      date_project_end: formData.date_project_end || null,
+      customer_name: formData.customer_name || null,
+      customer_email: formData.customer_email || null,
+      customer_type: formData.customer_type || null,
     }
 
     const result = await onUpdate(updatedOrder)
@@ -256,6 +272,74 @@ export function EditOrderDialog({
                 </select>
               </div>
 
+              <div>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>PM Type</label>
+                <select
+                  name="pm_type"
+                  value={formData.pm_type || ""}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 rounded-md bg-white h-10"
+                  style={{ border: '1px solid #8d9499', color: '#012e64' }}
+                >
+                  <option value="">Select...</option>
+                  <option value="Dedicated">Dedicated</option>
+                  <option value="General">General</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Supplier Payment</label>
+                <select
+                  name="supplier_payment"
+                  value={formData.supplier_payment || ""}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 rounded-md bg-white h-10"
+                  style={{ border: '1px solid #8d9499', color: '#012e64' }}
+                >
+                  <option value="">Select...</option>
+                  <option value="Yes">Yes</option>
+                  <option value="No">No</option>
+                  <option value="Pending">Pending</option>
+                </select>
+              </div>
+
+              {/* Customer Info — read-only, sourced from project record */}
+              <div className="col-span-2">
+                <h3 className="text-base font-semibold mb-3" style={{ color: '#012e64' }}>Customer Info</h3>
+              </div>
+              <div>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Customer Name</label>
+                <Input
+                  name="customer_name"
+                  value={formData.customer_name || ""}
+                  onChange={handleChange}
+                  className="bg-white"
+                  style={{ borderColor: '#8d9499', color: '#012e64' }}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Customer Email</label>
+                <Input
+                  name="customer_email"
+                  type="email"
+                  value={formData.customer_email || ""}
+                  onChange={handleChange}
+                  className="bg-white"
+                  style={{ borderColor: '#8d9499', color: '#012e64' }}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Customer Type</label>
+                <Input
+                  name="customer_type"
+                  value={formData.customer_type || ""}
+                  onChange={handleChange}
+                  className="bg-white"
+                  style={{ borderColor: '#8d9499', color: '#012e64' }}
+                />
+              </div>
+              <div>{/* spacer */}</div>
+
               <div className="col-span-2">
                 <label className="text-sm font-medium" style={{ color: '#012e64' }}>Comments</label>
                 <Textarea
@@ -373,6 +457,17 @@ export function EditOrderDialog({
                   name="date_information_complete"
                   type="date"
                   value={formData.date_information_complete ? formData.date_information_complete.split("T")[0] : ""}
+                  onChange={handleChange}
+                  className="bg-white"
+                  style={{ borderColor: '#8d9499', color: '#012e64' }}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Date Project End</label>
+                <Input
+                  name="date_project_end"
+                  type="date"
+                  value={formData.date_project_end ? formData.date_project_end.split("T")[0] : ""}
                   onChange={handleChange}
                   className="bg-white"
                   style={{ borderColor: '#8d9499', color: '#012e64' }}

@@ -33,7 +33,7 @@ export function CreateOrderDialog({
     quantity: "",
     product_type: "",
     unit_price: "",
-
+    pm_type: "",
   })
   const [productCodes, setProductCodes] = useState<ProductCode[]>([])
   const [loading, setLoading] = useState(false)
@@ -80,9 +80,9 @@ export function CreateOrderDialog({
       comments: formData.comments || null,
       order_type: formData.order_type || null,
       quantity: formData.quantity ? Number.parseInt(formData.quantity) : null,
-      product_type: formData.product_type || null,
+      product_type: formData.product_type,
       unit_price: formData.unit_price ? Number.parseFloat(formData.unit_price) : null,
-
+      pm_type: formData.pm_type || null,
     }
 
     const result = await onCreate(newOrder)
@@ -226,11 +226,12 @@ export function CreateOrderDialog({
                 />
               </div>
               <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Product Type</label>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Product Type *</label>
                 <select
                   name="product_type"
                   value={formData.product_type}
                   onChange={handleChange}
+                  required
                   className="w-full px-3 py-2 rounded-md bg-white text-gray-900 h-10"
                   style={{ border: '1px solid #8d9499' }}
                 >
@@ -238,6 +239,21 @@ export function CreateOrderDialog({
                   <option value="Standard">Standard</option>
                   <option value="Variation">Variation</option>
                   <option value="Revision">Revision</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>PM Type</label>
+                <select
+                  name="pm_type"
+                  value={formData.pm_type}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 rounded-md bg-white text-gray-900 h-10"
+                  style={{ border: '1px solid #8d9499' }}
+                >
+                  <option value="">Select PM type...</option>
+                  <option value="Dedicated">Dedicated</option>
+                  <option value="General">General</option>
                 </select>
               </div>
 

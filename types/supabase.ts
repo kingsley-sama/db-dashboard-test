@@ -185,6 +185,12 @@ export type Database = {
           client_rating: string | null
           questionnaire_received: string | null
           deposit: string | null
+          pm_type: string | null
+          supplier_payment: string | null
+          date_project_end: string | null
+          customer_name: string | null
+          customer_email: string | null
+          customer_type: string | null
         }
         Insert: {
           id?: number
@@ -224,6 +230,12 @@ export type Database = {
           client_rating?: string | null
           questionnaire_received?: string | null
           deposit?: string | null
+          pm_type?: string | null
+          supplier_payment?: string | null
+          date_project_end?: string | null
+          customer_name?: string | null
+          customer_email?: string | null
+          customer_type?: string | null
         }
         Update: {
           id?: number
@@ -263,6 +275,12 @@ export type Database = {
           client_rating?: string | null
           questionnaire_received?: string | null
           deposit?: string | null
+          pm_type?: string | null
+          supplier_payment?: string | null
+          date_project_end?: string | null
+          customer_name?: string | null
+          customer_email?: string | null
+          customer_type?: string | null
         }
         Relationships: [
           {
