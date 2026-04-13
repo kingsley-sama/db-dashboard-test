@@ -252,8 +252,8 @@ export function CreateOrderDialog({
                   style={{ border: '1px solid #8d9499' }}
                 >
                   <option value="">Select PM type...</option>
-                  <option value="Dedicated">Dedicated</option>
-                  <option value="General">General</option>
+                  <option value="dedicated">Dedicated</option>
+                  <option value="general">General</option>
                 </select>
               </div>
 

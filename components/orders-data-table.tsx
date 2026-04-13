@@ -24,7 +24,7 @@ const displayFields = [
   { key: "delivery_3_date", label: "delivery_3", width: "min-w-[130px]" },
   { key: "delivery_4_date", label: "delivery_4", width: "min-w-[130px]" },
   { key: "delivery_completion_date", label: "Date First Delivery Complete", width: "min-w-[210px]" },
-  { key: "date_project_end", label: "Date Project End", width: "min-w-[150px]" },
+  { key: "project_completion_date", label: "Date Project End", width: "min-w-[150px]" },
   { key: "delay_first_delivery", label: "Delay 1st Delivery", width: "min-w-[150px]" },
   { key: "delay_first_revision", label: "Delay 1st Revision", width: "min-w-[150px]" },
   { key: "delay_second_revision", label: "Delay 2nd Revision", width: "min-w-[150px]" },

@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     const filterPM = searchParams.get('filterPM') || '';
 
     // Build query with filters - join with projects for delivery_completion_date and project_name
-    let query = supabaseAdmin.from('orders').select('*, projects(delivery_completion_date, project_name)', { count: 'exact' });
+    let query = supabaseAdmin.from('orders').select('*, projects(delivery_completion_date, project_name, client_contact_name, company_email)', { count: 'exact' });
 
     // Apply search filter across multiple fields
     if (search) {
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch paginated data with filters - join with projects for delivery_completion_date and project_name
-    let dataQuery = supabaseAdmin.from('orders').select('*, projects(delivery_completion_date, project_name)');
+    let dataQuery = supabaseAdmin.from('orders').select('*, projects(delivery_completion_date, project_name, client_contact_name, company_email)');
 
     // Apply same filters to data query
     if (search) {
@@ -92,6 +92,8 @@ export async function GET(request: NextRequest) {
         ...rest,
         delivery_completion_date: projects?.delivery_completion_date || null,
         project_name: projects?.project_name || null,
+        customer_name: projects?.client_contact_name || null,
+        customer_email: projects?.company_email || null,
       };
     });
 

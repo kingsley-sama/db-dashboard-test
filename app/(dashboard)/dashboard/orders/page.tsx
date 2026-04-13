@@ -29,8 +29,8 @@ export default function OrdersPage() {
 
         setStats({
           total: orders.length,
-          pending: orders.filter((o: any) => o.status === 'pending').length,
-          completed: orders.filter((o: any) => o.status === 'completed').length,
+          pending: orders.filter((o: any) => !o.project_completion_date).length,
+          completed: orders.filter((o: any) => !!o.project_completion_date).length,
           thisWeek: orders.filter((o: any) => new Date(o.created_at) > weekAgo).length
         });
       }
@@ -67,7 +67,7 @@ export default function OrdersPage() {
         <Card className="p-6 bg-white hover:shadow-lg transition-all border border-gray-200">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Pending</p>
+              <p className="text-sm font-medium text-gray-600">In Progress</p>
               <p className="text-3xl font-bold mt-1 text-amber-600">{stats.pending}</p>
             </div>
             <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-amber-100">
