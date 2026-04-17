@@ -24,7 +24,7 @@ export default function DashboardLayout({
   ];
 
   return (
-    <div className="flex flex-col min-h-[calc(100dvh-68px)] w-[85%] mx-auto">
+    <div className="flex flex-col w-[85%] mx-auto">
       {/* Mobile header */}
       <div className="lg:hidden flex items-center justify-between bg-white border-b border-gray-200 p-4">
         <div className="flex items-center">
@@ -40,12 +40,12 @@ export default function DashboardLayout({
         </Button>
       </div>
 
-      <div className="flex flex-1 overflow-hidden h-full">
+      <div className="flex flex-1">
         {/* Sidebar */}
         <aside
           className={`${isCollapsed ? 'w-20' : 'w-64'} bg-white lg:bg-gray-50 border-r border-gray-200 lg:block ${
             isSidebarOpen ? 'block' : 'hidden'
-          } lg:relative absolute inset-y-0 left-0 z-40 transform transition-all duration-300 ease-in-out lg:translate-x-0 ${
+          } lg:sticky lg:top-[68px] lg:h-[calc(100dvh-68px)] absolute inset-y-0 left-0 z-40 transform transition-all duration-300 ease-in-out lg:translate-x-0 ${
             isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
@@ -86,7 +86,7 @@ export default function DashboardLayout({
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 overflow-y-auto p-0 lg:p-4">{children}</main>
+        <main className="flex-1 min-w-0 p-0 lg:p-4">{children}</main>
       </div>
     </div>
   );

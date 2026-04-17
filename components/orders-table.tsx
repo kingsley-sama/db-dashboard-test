@@ -199,7 +199,7 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-white rounded-xl" style={{ border: '1px solid #e5e5e5' }}>
+    <div className="flex flex-col bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #e5e5e5' }}>
       <div className="shrink-0 p-6 space-y-4">
         {error && (
           <Alert variant="destructive" className="animate-in slide-in-from-top-2" style={{ border: '1px solid #f05d5e', backgroundColor: '#fef2f2' }}>
@@ -322,7 +322,7 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
       <PaginationControls />
 
       {/* Table */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1">
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">

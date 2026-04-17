@@ -2,6 +2,7 @@
 
 import { Edit2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 
 const displayFields = [
   { key: "order_id", label: "Order ID", width: "min-w-[140px]" },
@@ -36,6 +37,69 @@ const displayFields = [
 ]
 
 export function OrdersDataTable({ orders, onEdit }: { orders: any[]; onEdit: (order: any) => void }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const theadRef = useRef<HTMLTableSectionElement>(null)
+  const floatingOuterRef = useRef<HTMLDivElement>(null)
+  const floatingScrollRef = useRef<HTMLDivElement>(null)
+  const [stuck, setStuck] = useState(false)
+  const [colWidths, setColWidths] = useState<number[]>([])
+  const [tableWidth, setTableWidth] = useState(0)
+
+  const measure = () => {
+    if (!theadRef.current || !scrollRef.current) return
+    const ths = theadRef.current.querySelectorAll("th")
+    setColWidths(Array.from(ths).map((th) => th.getBoundingClientRect().width))
+    setTableWidth(scrollRef.current.scrollWidth)
+  }
+
+  useLayoutEffect(() => {
+    measure()
+  }, [orders.length])
+
+  useEffect(() => {
+    const container = scrollRef.current
+    if (!container) return
+
+    const update = () => {
+      const rect = container.getBoundingClientRect()
+      const theadH = theadRef.current?.getBoundingClientRect().height ?? 46
+      const navEl = document.querySelector<HTMLElement>('header.sticky')
+      const navOffset = navEl?.getBoundingClientRect().height ?? 68
+      const shouldStick = rect.top < navOffset && rect.bottom > navOffset + theadH
+      setStuck(shouldStick)
+      if (floatingOuterRef.current) {
+        floatingOuterRef.current.style.top = `${navOffset}px`
+        floatingOuterRef.current.style.left = `${rect.left}px`
+        floatingOuterRef.current.style.width = `${rect.width}px`
+      }
+      if (floatingScrollRef.current) {
+        floatingScrollRef.current.scrollLeft = container.scrollLeft
+      }
+    }
+
+    const syncHorizontal = () => {
+      if (floatingScrollRef.current) {
+        floatingScrollRef.current.scrollLeft = container.scrollLeft
+      }
+    }
+
+    const onResize = () => {
+      measure()
+      update()
+    }
+
+    update()
+    window.addEventListener("scroll", update, { passive: true })
+    window.addEventListener("resize", onResize)
+    container.addEventListener("scroll", syncHorizontal, { passive: true })
+
+    return () => {
+      window.removeEventListener("scroll", update)
+      window.removeEventListener("resize", onResize)
+      container.removeEventListener("scroll", syncHorizontal)
+    }
+  }, [orders.length])
+
   const formatValue = (value: any, key: string, order?: any) => {
     if (key === "profit_margin") {
       if (order && (order.cost === 0 || order.cost === null)) return "100%"
@@ -66,78 +130,129 @@ export function OrdersDataTable({ orders, onEdit }: { orders: any[]; onEdit: (or
     return value
   }
 
+  const renderHeaderCells = (fixedWidths: boolean) => (
+    <tr style={{ borderBottom: '2px solid #e5e5e5' }}>
+      {displayFields.map((field, i) => (
+        <th
+          key={field.key}
+          className={`${fixedWidths ? '' : field.width} px-4 py-3 text-left font-semibold whitespace-nowrap`}
+          style={{
+            backgroundColor: '#f8f8f8',
+            color: '#012e64',
+            borderRight: '1px solid #e5e5e5',
+            ...(fixedWidths && colWidths[i]
+              ? { width: colWidths[i], minWidth: colWidths[i], maxWidth: colWidths[i] }
+              : {}),
+          }}
+        >
+          {field.label}
+        </th>
+      ))}
+      <th
+        className={`${fixedWidths ? '' : 'min-w-[80px]'} px-4 py-3 text-center font-semibold sticky right-0 z-40`}
+        style={{
+          backgroundColor: '#f8f8f8',
+          color: '#012e64',
+          borderLeft: '2px solid #e5e5e5',
+          ...(fixedWidths && colWidths[displayFields.length]
+            ? {
+                width: colWidths[displayFields.length],
+                minWidth: colWidths[displayFields.length],
+                maxWidth: colWidths[displayFields.length],
+              }
+            : {}),
+        }}
+      >
+        Actions
+      </th>
+    </tr>
+  )
+
   return (
-    <div className="h-full overflow-auto relative border-t" style={{ borderColor: '#e5e5e5' }}>
-      <table className="w-full border-collapse text-sm">
-        <thead className="sticky top-0 z-10" style={{ backgroundColor: '#f8f8f8' }}>
-          <tr style={{ borderBottom: '2px solid #e5e5e5' }}>
-            {displayFields.map((field) => (
-              <th
-                key={field.key}
-                className={`${field.width} px-4 py-3 text-left font-semibold whitespace-nowrap`}
-                style={{ color: '#012e64', borderRight: '1px solid #e5e5e5' }}
-              >
-                {field.label}
-              </th>
-            ))}
-            <th 
-              className="min-w-[80px] px-4 py-3 text-center font-semibold sticky right-0 z-20" 
-              style={{ backgroundColor: '#f8f8f8', color: '#012e64', borderLeft: '2px solid #e5e5e5' }}
-            >
-              Actions
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {orders.map((order, idx) => (
-            <tr
-              key={order.id}
-              className="hover:bg-blue-50 transition-colors"
-              style={{ 
-                borderBottom: '1px solid #e5e5e5', 
-                backgroundColor: idx % 2 === 0 ? '#ffffff' : '#fafafa' 
-              }}
-            >
-              {displayFields.map((field) => (
-                <td 
-                  key={field.key} 
-                  className={`${field.width} px-4 py-3 whitespace-nowrap`} 
-                  style={{ color: '#012e64', borderRight: '1px solid #f0f0f0' }}
-                  title={String(order[field.key] || '')}
-                >
-                  {field.maxWidth ? (
-                    <div style={{ maxWidth: field.maxWidth, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {formatValue(order[field.key], field.key, order)}
-                    </div>
-                  ) : formatValue(order[field.key], field.key, order)}
-                </td>
-              ))}
-              <td 
-                className="min-w-[80px] px-4 py-3 sticky right-0 z-10 text-center" 
-                style={{ 
-                  backgroundColor: idx % 2 === 0 ? '#ffffff' : '#fafafa',
-                  borderLeft: '2px solid #e5e5e5'
+    <div className="relative">
+      <div
+        ref={scrollRef}
+        className="overflow-x-auto relative border-t"
+        style={{ borderColor: '#e5e5e5' }}
+      >
+        <table className="w-full border-collapse text-sm">
+          <thead ref={theadRef} style={{ backgroundColor: '#f8f8f8' }}>
+            {renderHeaderCells(false)}
+          </thead>
+          <tbody>
+            {orders.map((order, idx) => (
+              <tr
+                key={order.id}
+                className="hover:bg-blue-50 transition-colors"
+                style={{
+                  borderBottom: '1px solid #e5e5e5',
+                  backgroundColor: idx % 2 === 0 ? '#ffffff' : '#fafafa'
                 }}
               >
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => onEdit(order)} 
-                  className="h-8 w-8 p-0 hover:bg-blue-100" 
-                  style={{ color: '#012e64' }}
+                {displayFields.map((field) => (
+                  <td
+                    key={field.key}
+                    className={`${field.width} px-4 py-3 whitespace-nowrap`}
+                    style={{ color: '#012e64', borderRight: '1px solid #f0f0f0' }}
+                    title={String(order[field.key] || '')}
+                  >
+                    {field.maxWidth ? (
+                      <div style={{ maxWidth: field.maxWidth, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {formatValue(order[field.key], field.key, order)}
+                      </div>
+                    ) : formatValue(order[field.key], field.key, order)}
+                  </td>
+                ))}
+                <td
+                  className="min-w-[80px] px-4 py-3 sticky right-0 z-10 text-center"
+                  style={{
+                    backgroundColor: idx % 2 === 0 ? '#ffffff' : '#fafafa',
+                    borderLeft: '2px solid #e5e5e5'
+                  }}
                 >
-                  <Edit2 className="w-4 h-4" />
-                </Button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {orders.length === 0 && (
-        <div className="flex items-center justify-center h-64">
-          <p className="text-gray-500">No orders found</p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onEdit(order)}
+                    className="h-8 w-8 p-0 hover:bg-blue-100"
+                    style={{ color: '#012e64' }}
+                  >
+                    <Edit2 className="w-4 h-4" />
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {orders.length === 0 && (
+          <div className="flex items-center justify-center h-64">
+            <p className="text-gray-500">No orders found</p>
+          </div>
+        )}
+      </div>
+
+      <div
+        ref={floatingOuterRef}
+        aria-hidden="true"
+        className="fixed"
+        style={{
+          top: 68,
+          zIndex: 40,
+          display: stuck ? 'block' : 'none',
+          pointerEvents: 'none',
+        }}
+      >
+        <div ref={floatingScrollRef} className="overflow-hidden">
+          <table
+            className="border-collapse text-sm"
+            style={{ width: tableWidth || 'auto', tableLayout: 'fixed' }}
+          >
+            <thead style={{ backgroundColor: '#f8f8f8' }}>
+              {renderHeaderCells(true)}
+            </thead>
+          </table>
         </div>
-      )}
+      </div>
     </div>
   )
 }
