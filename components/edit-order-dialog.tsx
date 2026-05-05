@@ -106,6 +106,7 @@ export function EditOrderDialog({
       pm_type: formData.pm_type || null,
       supplier_payment: formData.supplier_payment || null,
       project_completion_date: formData.project_completion_date || null,
+      discount: formData.discount !== "" && formData.discount != null ? Number.parseFloat(formData.discount) : null,
     }
 
     const result = await onUpdate(updatedOrder)
@@ -304,6 +305,20 @@ export function EditOrderDialog({
                   <option value="No">No</option>
                   <option value="Pending">Pending</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Discount</label>
+                <Input
+                  name="discount"
+                  type="number"
+                  step="0.01"
+                  value={formData.discount ?? ""}
+                  onChange={handleChange}
+                  placeholder="0.00"
+                  className="bg-white"
+                  style={{ borderColor: '#8d9499', color: '#012e64' }}
+                />
               </div>
 
               <div className="col-span-2">

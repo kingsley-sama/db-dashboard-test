@@ -34,6 +34,7 @@ export function CreateOrderDialog({
     product_type: "",
     unit_price: "",
     pm_type: "",
+    discount: "",
   })
   const [productCodes, setProductCodes] = useState<ProductCode[]>([])
   const [loading, setLoading] = useState(false)
@@ -83,6 +84,7 @@ export function CreateOrderDialog({
       product_type: formData.product_type,
       unit_price: formData.unit_price ? Number.parseFloat(formData.unit_price) : null,
       pm_type: formData.pm_type || null,
+      discount: formData.discount ? Number.parseFloat(formData.discount) : null,
     }
 
     const result = await onCreate(newOrder)
@@ -255,6 +257,20 @@ export function CreateOrderDialog({
                   <option value="dedicated">Dedicated</option>
                   <option value="general">General</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Discount</label>
+                <Input
+                  name="discount"
+                  type="number"
+                  step="0.01"
+                  value={formData.discount}
+                  onChange={handleChange}
+                  placeholder="0.00"
+                  className="bg-white text-gray-900"
+                  style={{ borderColor: '#8d9499' }}
+                />
               </div>
 
               <div className="col-span-2">

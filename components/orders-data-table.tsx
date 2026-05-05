@@ -16,6 +16,7 @@ const displayFields = [
   { key: "cost", label: "Cost", width: "min-w-[110px]" },
   { key: "profit_margin", label: "Profit Margin", width: "min-w-[130px]" },
   { key: "net_sum", label: "Net Sum", width: "min-w-[110px]" },
+  { key: "discount", label: "Discount", width: "min-w-[110px]" },
   { key: "supplier_payment", label: "Supplier Payment", width: "min-w-[150px]" },
   { key: "deposit", label: "Deposit", width: "min-w-[100px]" },
   { key: "date_information_complete", label: "Date Info Complete", width: "min-w-[160px]" },
@@ -42,6 +43,7 @@ export function OrdersDataTable({ orders, onEdit }: { orders: any[]; onEdit: (or
   const floatingOuterRef = useRef<HTMLDivElement>(null)
   const floatingScrollRef = useRef<HTMLDivElement>(null)
   const [stuck, setStuck] = useState(false)
+  const [scrolledX, setScrolledX] = useState(false)
   const [colWidths, setColWidths] = useState<number[]>([])
   const [tableWidth, setTableWidth] = useState(0)
 
@@ -67,6 +69,7 @@ export function OrdersDataTable({ orders, onEdit }: { orders: any[]; onEdit: (or
       const navOffset = navEl?.getBoundingClientRect().height ?? 68
       const shouldStick = rect.top < navOffset && rect.bottom > navOffset + theadH
       setStuck(shouldStick)
+      setScrolledX(container.scrollLeft > 0)
       if (floatingOuterRef.current) {
         floatingOuterRef.current.style.top = `${navOffset}px`
         floatingOuterRef.current.style.left = `${rect.left}px`
@@ -78,6 +81,7 @@ export function OrdersDataTable({ orders, onEdit }: { orders: any[]; onEdit: (or
     }
 
     const syncHorizontal = () => {
+      setScrolledX(container.scrollLeft > 0)
       if (floatingScrollRef.current) {
         floatingScrollRef.current.scrollLeft = container.scrollLeft
       }
@@ -119,8 +123,16 @@ export function OrdersDataTable({ orders, onEdit }: { orders: any[]; onEdit: (or
       }
     }
 
+    if (key === "discount") {
+      return typeof value === "number"
+        ? `${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
+        : value
+    }
+
     if (["net_sum", "cost"].includes(key)) {
-      return typeof value === "number" ? `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : value
+      return typeof value === "number"
+        ? `€${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : value
     }
 
     if (["delay_first_delivery", "delay_first_revision", "delay_second_revision"].includes(key)) {
@@ -132,22 +144,32 @@ export function OrdersDataTable({ orders, onEdit }: { orders: any[]; onEdit: (or
 
   const renderHeaderCells = (fixedWidths: boolean) => (
     <tr style={{ borderBottom: '2px solid #e5e5e5' }}>
-      {displayFields.map((field, i) => (
-        <th
-          key={field.key}
-          className={`${fixedWidths ? '' : field.width} px-4 py-3 text-left font-semibold whitespace-nowrap`}
-          style={{
-            backgroundColor: '#f8f8f8',
-            color: '#012e64',
-            borderRight: '1px solid #e5e5e5',
-            ...(fixedWidths && colWidths[i]
-              ? { width: colWidths[i], minWidth: colWidths[i], maxWidth: colWidths[i] }
-              : {}),
-          }}
-        >
-          {field.label}
-        </th>
-      ))}
+      {displayFields.map((field, i) => {
+        const isFirst = i === 0
+        return (
+          <th
+            key={field.key}
+            className={`${fixedWidths ? '' : field.width} px-4 py-3 text-left font-semibold whitespace-nowrap${isFirst ? ' sticky left-0 z-40' : ''}`}
+            style={{
+              backgroundColor: '#f8f8f8',
+              color: '#012e64',
+              borderRight: isFirst ? undefined : '1px solid #cbd5e1',
+              ...(isFirst
+                ? {
+                    boxShadow: scrolledX
+                      ? 'inset -1px 0 0 #cbd5e1, 6px 0 8px -4px rgba(0, 0, 0, 0.18)'
+                      : 'inset -1px 0 0 #cbd5e1',
+                  }
+                : {}),
+              ...(fixedWidths && colWidths[i]
+                ? { width: colWidths[i], minWidth: colWidths[i], maxWidth: colWidths[i] }
+                : {}),
+            }}
+          >
+            {field.label}
+          </th>
+        )
+      })}
       <th
         className={`${fixedWidths ? '' : 'min-w-[80px]'} px-4 py-3 text-center font-semibold sticky right-0 z-40`}
         style={{
@@ -189,20 +211,34 @@ export function OrdersDataTable({ orders, onEdit }: { orders: any[]; onEdit: (or
                   backgroundColor: idx % 2 === 0 ? '#ffffff' : '#fafafa'
                 }}
               >
-                {displayFields.map((field) => (
-                  <td
-                    key={field.key}
-                    className={`${field.width} px-4 py-3 whitespace-nowrap`}
-                    style={{ color: '#012e64', borderRight: '1px solid #f0f0f0' }}
-                    title={String(order[field.key] || '')}
-                  >
-                    {field.maxWidth ? (
-                      <div style={{ maxWidth: field.maxWidth, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {formatValue(order[field.key], field.key, order)}
-                      </div>
-                    ) : formatValue(order[field.key], field.key, order)}
-                  </td>
-                ))}
+                {displayFields.map((field, i) => {
+                  const isFirst = i === 0
+                  return (
+                    <td
+                      key={field.key}
+                      className={`${field.width} px-4 py-3 whitespace-nowrap${isFirst ? ' sticky left-0 z-10' : ''}`}
+                      style={{
+                        color: '#012e64',
+                        borderRight: isFirst ? undefined : '1px solid #cbd5e1',
+                        ...(isFirst
+                          ? {
+                              backgroundColor: idx % 2 === 0 ? '#ffffff' : '#fafafa',
+                              boxShadow: scrolledX
+                                ? 'inset -1px 0 0 #cbd5e1, 6px 0 8px -4px rgba(0, 0, 0, 0.18)'
+                                : 'inset -1px 0 0 #cbd5e1',
+                            }
+                          : {}),
+                      }}
+                      title={String(order[field.key] || '')}
+                    >
+                      {field.maxWidth ? (
+                        <div style={{ maxWidth: field.maxWidth, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {formatValue(order[field.key], field.key, order)}
+                        </div>
+                      ) : formatValue(order[field.key], field.key, order)}
+                    </td>
+                  )
+                })}
                 <td
                   className="min-w-[80px] px-4 py-3 sticky right-0 z-10 text-center"
                   style={{
