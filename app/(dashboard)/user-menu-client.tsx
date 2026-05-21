@@ -18,9 +18,18 @@ import { HomeCTAButton } from '@/components/home-cta-button';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
-export function UserMenuClient({ isSignedIn }: { isSignedIn: boolean }) {
+export function UserMenuClient({
+  isSignedIn,
+  initialUser = null,
+}: {
+  isSignedIn: boolean;
+  initialUser?: User | null;
+}) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { data: user } = useSWR<User>('/api/user', fetcher);
+  const { data: swrUser } = useSWR<User | null>('/api/user', fetcher, {
+    fallbackData: initialUser,
+  });
+  const user = swrUser ?? initialUser;
   const router = useRouter();
 
   async function handleSignOut() {

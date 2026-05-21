@@ -3,15 +3,16 @@
  * This module provides a bridge to the main app's authentication system
  */
 
-import { getSession } from '@/lib/auth/session';
+import { getUser } from '@/lib/db/queries';
 import { redirect } from 'next/navigation';
 
 /**
- * Get the current user session from the main app's auth system
- * Returns null if no session exists
+ * Get the current authenticated user. Verifies the JWT cookie AND that the
+ * user row still exists (not soft-deleted) — so a stale cookie can't pass.
+ * Returns null if not authenticated.
  */
 export async function getCurrentUser() {
-  return await getSession();
+  return await getUser();
 }
 
 /**
@@ -19,18 +20,18 @@ export async function getCurrentUser() {
  * Use this in server components and server actions
  */
 export async function requireAuth() {
-  const session = await getSession();
-  if (!session) {
+  const user = await getUser();
+  if (!user) {
     redirect('/sign-in');
   }
-  return session;
+  return user;
 }
 
 /**
- * Get user ID from session
- * Returns null if no session exists
+ * Get user ID for the current authenticated user
+ * Returns null if not authenticated.
  */
 export async function getUserId() {
-  const session = await getSession();
-  return session?.user?.id || null;
+  const user = await getUser();
+  return user?.id ?? null;
 }
