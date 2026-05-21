@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { X, AlertCircle } from "lucide-react"
+import { X, AlertCircle, CheckCircle2, XCircle, Loader2 } from "lucide-react"
 import { Textarea } from "@/components/ui/textarea"
 
 interface ProductCode {
@@ -40,6 +40,10 @@ export function CreateOrderDialog({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [loadingProducts, setLoadingProducts] = useState(true)
+  const [projectCheck, setProjectCheck] = useState<{
+    status: "idle" | "checking" | "found" | "not_found" | "error"
+    projectName?: string | null
+  }>({ status: "idle" })
 
   // Fetch product codes on mount
   useEffect(() => {
@@ -61,6 +65,44 @@ export function CreateOrderDialog({
     fetchProductCodes()
   }, [])
 
+  // Debounced project_id existence check
+  useEffect(() => {
+    const trimmed = formData.project_id.trim()
+    if (!trimmed) {
+      setProjectCheck({ status: "idle" })
+      return
+    }
+
+    setProjectCheck({ status: "checking" })
+    const controller = new AbortController()
+    const timer = setTimeout(async () => {
+      try {
+        const response = await fetch(
+          `/api/projects/check?project_id=${encodeURIComponent(trimmed)}`,
+          { signal: controller.signal }
+        )
+        if (!response.ok) {
+          setProjectCheck({ status: "error" })
+          return
+        }
+        const result = await response.json()
+        setProjectCheck({
+          status: result.exists ? "found" : "not_found",
+          projectName: result.project?.project_name ?? null,
+        })
+      } catch (err: any) {
+        if (err.name !== "AbortError") {
+          setProjectCheck({ status: "error" })
+        }
+      }
+    }, 400)
+
+    return () => {
+      controller.abort()
+      clearTimeout(timer)
+    }
+  }, [formData.project_id])
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setFormData({
       ...formData,
@@ -70,6 +112,16 @@ export function CreateOrderDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (projectCheck.status === "not_found") {
+      setError("Project ID does not exist. Please enter a valid project.")
+      return
+    }
+    if (projectCheck.status === "checking") {
+      setError("Still verifying Project ID, please wait...")
+      return
+    }
+
     setLoading(true)
     setError("")
 
@@ -127,15 +179,51 @@ export function CreateOrderDialog({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium" style={{ color: '#012e64' }}>Project ID *</label>
-                <Input
-                  name="project_id"
-                  value={formData.project_id}
-                  onChange={handleChange}
-                  required
-                  placeholder="e.g., PROJ-001"
-                  className="bg-white text-gray-900"
-                  style={{ borderColor: '#8d9499' }}
-                />
+                <div className="relative">
+                  <Input
+                    name="project_id"
+                    value={formData.project_id}
+                    onChange={handleChange}
+                    required
+                    placeholder="e.g., PROJ-001"
+                    className="bg-white text-gray-900 pr-9"
+                    style={{
+                      borderColor:
+                        projectCheck.status === "found"
+                          ? "#16a34a"
+                          : projectCheck.status === "not_found"
+                          ? "#dc2626"
+                          : "#8d9499",
+                    }}
+                    aria-invalid={projectCheck.status === "not_found"}
+                  />
+                  <div className="absolute inset-y-0 right-2 flex items-center pointer-events-none">
+                    {projectCheck.status === "checking" && (
+                      <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#5d6b88' }} />
+                    )}
+                    {projectCheck.status === "found" && (
+                      <CheckCircle2 className="w-4 h-4" style={{ color: '#16a34a' }} />
+                    )}
+                    {projectCheck.status === "not_found" && (
+                      <XCircle className="w-4 h-4" style={{ color: '#dc2626' }} />
+                    )}
+                  </div>
+                </div>
+                {projectCheck.status === "found" && (
+                  <p className="mt-1 text-xs" style={{ color: '#16a34a' }}>
+                    Project found{projectCheck.projectName ? `: ${projectCheck.projectName}` : ""}
+                  </p>
+                )}
+                {projectCheck.status === "not_found" && (
+                  <p className="mt-1 text-xs" style={{ color: '#dc2626' }}>
+                    No project with this ID exists
+                  </p>
+                )}
+                {projectCheck.status === "error" && (
+                  <p className="mt-1 text-xs" style={{ color: '#dc2626' }}>
+                    Could not verify project ID
+                  </p>
+                )}
               </div>
               <div>
                 <label className="text-sm font-medium" style={{ color: '#012e64' }}>Supplier</label>
