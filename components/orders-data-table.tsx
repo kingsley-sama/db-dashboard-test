@@ -17,7 +17,6 @@ const displayFields = [
   { key: "profit_margin", label: "Profit Margin", width: "min-w-[130px]" },
   { key: "net_sum", label: "Net Sum", width: "min-w-[110px]" },
   { key: "discount", label: "Discount", width: "min-w-[110px]" },
-  { key: "supplier_payment", label: "Supplier Payment", width: "min-w-[150px]" },
   { key: "deposit", label: "Deposit", width: "min-w-[100px]" },
   { key: "date_information_complete", label: "Date Info Complete", width: "min-w-[160px]" },
   { key: "due_delivery_date", label: "Due Delivery Date", width: "min-w-[150px]" },
@@ -35,6 +34,7 @@ const displayFields = [
   { key: "customer_type", label: "Customer Type", width: "min-w-[140px]" },
   { key: "comments", label: "Comments", width: "min-w-[20px]", maxWidth: "900px" },
   { key: "created_at", label: "Date Order Entry", width: "min-w-[150px]" },
+  { key: "supplier_payment", label: "Supplier Payment", width: "min-w-[150px]" },
 ]
 
 export function OrdersDataTable({ orders, onEdit }: { orders: any[]; onEdit: (order: any) => void }) {
@@ -114,6 +114,10 @@ export function OrdersDataTable({ orders, onEdit }: { orders: any[]; onEdit: (or
     }
 
     if (value === null || value === undefined) return "-"
+
+    if (key === "supplier_payment") {
+      return value ? "Yes" : "No"
+    }
 
     if ((key.includes("date") || key === "created_at") && value) {
       try {

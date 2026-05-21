@@ -240,6 +240,7 @@ export function CreateOrderDialog({
                   <option value="Nhat">Nhat</option>
                   <option value="3D Sakura">3D Sakura</option>
                   <option value="Boris">Boris</option>
+                  <option value="Intern">Intern</option>
                 </select>
               </div>
               <div>

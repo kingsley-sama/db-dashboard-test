@@ -102,6 +102,7 @@ export function EditOrderDialog({
       // These fields are saved to the projects table via the API
       questionnaire_received: formData.questionnaire_received || null,
       deposit: formData.deposit || null,
+      delivery_completion_date: formData.delivery_completion_date || null,
       // New PM dashboard fields
       pm_type: formData.pm_type || null,
       supplier_payment: formData.supplier_payment || null,
@@ -166,6 +167,7 @@ export function EditOrderDialog({
                   <option value="Nhat">Nhat</option>
                   <option value="3D Sakura">3D Sakura</option>
                   <option value="Boris">Boris</option>
+                  <option value="Intern">Intern</option>
                 </select>
               </div>
               <div>
@@ -438,6 +440,17 @@ export function EditOrderDialog({
                   name="date_information_complete"
                   type="date"
                   value={formData.date_information_complete ? formData.date_information_complete.split("T")[0] : ""}
+                  onChange={handleChange}
+                  className="bg-white"
+                  style={{ borderColor: '#8d9499', color: '#012e64' }}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Date First Delivery Complete</label>
+                <Input
+                  name="delivery_completion_date"
+                  type="date"
+                  value={formData.delivery_completion_date ? formData.delivery_completion_date.split("T")[0] : ""}
                   onChange={handleChange}
                   className="bg-white"
                   style={{ borderColor: '#8d9499', color: '#012e64' }}
