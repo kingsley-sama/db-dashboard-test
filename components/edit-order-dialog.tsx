@@ -214,7 +214,6 @@ export function EditOrderDialog({
                   <option value="Internal">Internal</option>
                   <option value="Free of Charge">Free of Charge</option>
                   <option value="Express">Express</option>
-                  <option value="Revision">Revision</option>
                 </select>
               </div>
               <div>
