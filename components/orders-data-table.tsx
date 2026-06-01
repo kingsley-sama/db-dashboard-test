@@ -206,13 +206,20 @@ export function OrdersDataTable({ orders, onEdit }: { orders: any[]; onEdit: (or
             {renderHeaderCells(false)}
           </thead>
           <tbody>
-            {orders.map((order, idx) => (
+            {orders.map((order, idx) => {
+              const delayed = ["delay_first_delivery", "delay_first_revision", "delay_second_revision"].some(
+                (k) => Number(order[k]) > 0
+              )
+              const rowBg = delayed
+                ? (idx % 2 === 0 ? '#fef2f2' : '#fee2e2')
+                : (idx % 2 === 0 ? '#ffffff' : '#fafafa')
+              return (
               <tr
                 key={order.id}
-                className="hover:bg-blue-50 transition-colors"
+                className={`transition-colors ${delayed ? 'hover:bg-red-100' : 'hover:bg-blue-50'}`}
                 style={{
                   borderBottom: '1px solid #e5e5e5',
-                  backgroundColor: idx % 2 === 0 ? '#ffffff' : '#fafafa'
+                  backgroundColor: rowBg
                 }}
               >
                 {displayFields.map((field, i) => {
@@ -226,7 +233,7 @@ export function OrdersDataTable({ orders, onEdit }: { orders: any[]; onEdit: (or
                         borderRight: isFirst ? undefined : '1px solid #cbd5e1',
                         ...(isFirst
                           ? {
-                              backgroundColor: idx % 2 === 0 ? '#ffffff' : '#fafafa',
+                              backgroundColor: rowBg,
                               boxShadow: scrolledX
                                 ? 'inset -1px 0 0 #cbd5e1, 6px 0 8px -4px rgba(0, 0, 0, 0.18)'
                                 : 'inset -1px 0 0 #cbd5e1',
@@ -246,7 +253,7 @@ export function OrdersDataTable({ orders, onEdit }: { orders: any[]; onEdit: (or
                 <td
                   className="min-w-[80px] px-4 py-3 sticky right-0 z-10 text-center"
                   style={{
-                    backgroundColor: idx % 2 === 0 ? '#ffffff' : '#fafafa',
+                    backgroundColor: rowBg,
                     borderLeft: '2px solid #e5e5e5'
                   }}
                 >
@@ -261,7 +268,8 @@ export function OrdersDataTable({ orders, onEdit }: { orders: any[]; onEdit: (or
                   </Button>
                 </td>
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
         {orders.length === 0 && (
