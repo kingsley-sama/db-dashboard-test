@@ -25,12 +25,6 @@ export function EditOrderDialog({
   onClose: () => void
   onUpdate: (order: any) => Promise<{ success: boolean; error?: string }>
 }) {
-  const normalizeProductType = (val: string | null | undefined) => {
-    if (!val) return ""
-    const map: Record<string, string> = { standard: "Standard", variation: "Variation", revision: "Revision" }
-    return map[val.toLowerCase()] ?? val
-  }
-
   const normalizePmType = (val: string | null | undefined) => {
     if (!val) return ""
     return val.toLowerCase()
@@ -38,7 +32,6 @@ export function EditOrderDialog({
 
   const [formData, setFormData] = useState({
     ...order,
-    product_type: normalizeProductType(order.product_type),
     pm_type: normalizePmType(order.pm_type),
   })
   const [productCodes, setProductCodes] = useState<ProductCode[]>([])
@@ -94,7 +87,6 @@ export function EditOrderDialog({
       delivery_3_date: formData.delivery_3_date || null,
       delivery_4_date: formData.delivery_4_date || null,
       date_information_complete: formData.date_information_complete || null,
-      product_type: formData.product_type || null,
       unit_price: formData.unit_price ? Number.parseFloat(formData.unit_price) : null,
       delay_first_delivery: formData.delay_first_delivery !== "" && formData.delay_first_delivery != null ? Number.parseInt(formData.delay_first_delivery) : null,
       delay_first_revision: formData.delay_first_revision !== "" && formData.delay_first_revision != null ? Number.parseInt(formData.delay_first_revision) : null,
@@ -233,22 +225,6 @@ export function EditOrderDialog({
                 />
               </div>
               <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Product Type</label>
-                <select
-                  name="product_type"
-                  value={formData.product_type || ""}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 rounded-md bg-white h-10"
-                  style={{ border: '1px solid #8d9499', color: '#012e64' }}
-                >
-                  <option value="">Select type...</option>
-                  <option value="Standard">Standard</option>
-                  <option value="Variation">Variation</option>
-                  <option value="Revision">Revision</option>
-                </select>
-              </div>
-
-              <div>
                 <label className="text-sm font-medium" style={{ color: '#012e64' }}>Questionnaire Received</label>
                 <select
                   name="questionnaire_received"
@@ -340,7 +316,7 @@ export function EditOrderDialog({
                 <h3 className="text-base font-semibold mb-3" style={{ color: '#012e64' }}>Delays</h3>
               </div>
               <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Delay 1st Delivery (days)</label>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Delay 1st Delivery (hours)</label>
                 <Input
                   name="delay_first_delivery"
                   type="number"
@@ -351,7 +327,7 @@ export function EditOrderDialog({
                 />
               </div>
               <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Delay 1st Revision (days)</label>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Delay 1st Revision (hours)</label>
                 <Input
                   name="delay_first_revision"
                   type="number"
@@ -362,7 +338,7 @@ export function EditOrderDialog({
                 />
               </div>
               <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Delay 2nd Revision (days)</label>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Delay 2nd Revision (hours)</label>
                 <Input
                   name="delay_second_revision"
                   type="number"

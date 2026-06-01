@@ -328,6 +328,7 @@ export function CreateOrderDialog({
                   <option value="">Select type...</option>
                   <option value="Standard">Standard</option>
                   <option value="Variation">Variation</option>
+                  <option value="Upsell">Upsell</option>
                   <option value="Revision">Revision</option>
                 </select>
               </div>

@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search') || '';
     const filterType = searchParams.get('filterType') || '';
     const filterPM = searchParams.get('filterPM') || '';
+    const filterPmType = searchParams.get('filterPmType') || '';
 
     // Build query with filters - join with projects for delivery_completion_date and project_name
     let query = supabaseAdmin.from('orders').select('*, projects(delivery_completion_date, project_name, client_contact_name, company_email)', { count: 'exact' });
@@ -44,6 +45,11 @@ export async function GET(request: NextRequest) {
     // Apply PM filter
     if (filterPM) {
       query = query.eq('PM', filterPM);
+    }
+
+    // Apply PM type filter
+    if (filterPmType) {
+      query = query.eq('pm_type', filterPmType);
     }
 
     // Get total count with filters applied
@@ -75,6 +81,10 @@ export async function GET(request: NextRequest) {
 
     if (filterPM) {
       dataQuery = dataQuery.eq('PM', filterPM);
+    }
+
+    if (filterPmType) {
+      dataQuery = dataQuery.eq('pm_type', filterPmType);
     }
 
     const { data, error } = await dataQuery

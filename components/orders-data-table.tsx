@@ -140,7 +140,7 @@ export function OrdersDataTable({ orders, onEdit }: { orders: any[]; onEdit: (or
     }
 
     if (["delay_first_delivery", "delay_first_revision", "delay_second_revision"].includes(key)) {
-      return `${value} days`
+      return `${value} hours`
     }
 
     return value

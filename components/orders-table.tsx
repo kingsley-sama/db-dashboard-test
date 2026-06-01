@@ -18,6 +18,7 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
   const [editingOrder, setEditingOrder] = useState<any>(null)
   const [filterType, setFilterType] = useState<string>("")
   const [filterPM, setFilterPM] = useState<string>("")
+  const [filterPmType, setFilterPmType] = useState<string>("")
   const [currentPage, setCurrentPage] = useState(1)
   const [pagination, setPagination] = useState({
     page: 1,
@@ -29,7 +30,7 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
   // Fetch orders when page, search, or filter changes
   useEffect(() => {
     fetchOrders(currentPage)
-  }, [currentPage, searchTerm, filterType, filterPM])
+  }, [currentPage, searchTerm, filterType, filterPM, filterPmType])
 
   const fetchOrders = async (page = 1) => {
     setLoading(true)
@@ -43,6 +44,7 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
       if (searchTerm) params.append('search', searchTerm)
       if (filterType) params.append('filterType', filterType)
       if (filterPM) params.append('filterPM', filterPM)
+      if (filterPmType) params.append('filterPmType', filterPmType)
       
       const response = await fetch(`/api/orders?${params.toString()}`)
       const result = await response.json()
@@ -66,7 +68,7 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
     if (currentPage !== 1) {
       setCurrentPage(1)
     }
-  }, [searchTerm, filterType, filterPM])
+  }, [searchTerm, filterType, filterPM, filterPmType])
 
   // Handle search and filter
   // Note: Search and filter are now handled on the backend across all data
@@ -252,7 +254,7 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
               {pagination.total.toLocaleString()}
             </div>
             <div className="text-sm font-medium" style={{ color: '#5d6b88' }}>
-              Total Orders{searchTerm || filterType || filterPM ? ' (filtered)' : ''}
+              Total Orders{searchTerm || filterType || filterPM || filterPmType ? ' (filtered)' : ''}
             </div>
           </div>
         </div>
@@ -274,6 +276,17 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
             {["Viktoria", "Sonia", "Vivien", "Nesrin", "Ani", "Viktoria & Sonia", "Viktoria und Vivien", "Sonia und Vivien", "Sonia & CH"].map((pm) => (
               <option key={pm} value={pm}>{pm}</option>
             ))}
+          </select>
+          {/* PM Type Filter */}
+          <select
+            value={filterPmType}
+            onChange={(e) => setFilterPmType(e.target.value)}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white"
+            style={{ border: '1px solid #8d9499', color: filterPmType ? '#012e64' : '#5d6b88' }}
+          >
+            <option value="">All PM Types</option>
+            <option value="dedicated">Dedicated</option>
+            <option value="general">General</option>
           </select>
           <div className="flex gap-2 flex-wrap">
             <button
