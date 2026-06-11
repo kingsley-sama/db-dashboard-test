@@ -5,12 +5,14 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Users, Settings, Shield, Activity, Menu, ChevronLeft, ChevronRight, Package } from 'lucide-react';
+import { Users, Settings, Shield, Menu, ChevronLeft, ChevronRight, Package, FolderKanban } from 'lucide-react';
 
 export function DashboardShell({
-  children
+  children,
+  isOwner = false
 }: {
   children: React.ReactNode;
+  isOwner?: boolean;
 }) {
   const pathname = usePathname();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -18,9 +20,10 @@ export function DashboardShell({
 
   const navItems = [
     { href: '/dashboard/orders', icon: Package, label: 'Orders' },
+    // Projects are visible to owners only
+    ...(isOwner ? [{ href: '/dashboard/projects', icon: FolderKanban, label: 'Projects' }] : []),
     { href: '/dashboard', icon: Users, label: 'Team' },
     { href: '/dashboard/general', icon: Settings, label: 'General' },
-    { href: '/dashboard/activity', icon: Activity, label: 'Activity' },
     { href: '/dashboard/security', icon: Shield, label: 'Security' }
   ];
 
