@@ -1,6 +1,6 @@
 "use client"
 
-import { Edit2 } from "lucide-react"
+import { Edit2, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 
@@ -32,7 +32,15 @@ const displayFields = [
   { key: "created_at", label: "Date Entry", width: "min-w-[140px]" },
 ]
 
-export function ProjectsDataTable({ projects, onEdit }: { projects: any[]; onEdit: (project: any) => void }) {
+export function ProjectsDataTable({
+  projects,
+  onEdit,
+  onDelete,
+}: {
+  projects: any[]
+  onEdit: (project: any) => void
+  onDelete?: (project: any) => void
+}) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const theadRef = useRef<HTMLTableSectionElement>(null)
   const floatingOuterRef = useRef<HTMLDivElement>(null)
@@ -144,7 +152,7 @@ export function ProjectsDataTable({ projects, onEdit }: { projects: any[]; onEdi
         )
       })}
       <th
-        className={`${fixedWidths ? '' : 'min-w-[80px]'} px-4 py-3 text-center font-semibold sticky right-0 z-40`}
+        className={`${fixedWidths ? '' : 'min-w-[110px]'} px-4 py-3 text-center font-semibold sticky right-0 z-40`}
         style={{
           backgroundColor: '#f8f8f8',
           color: '#012e64',
@@ -215,21 +223,35 @@ export function ProjectsDataTable({ projects, onEdit }: { projects: any[]; onEdi
                   )
                 })}
                 <td
-                  className="min-w-[80px] px-4 py-3 sticky right-0 z-10 text-center"
+                  className="min-w-[110px] px-4 py-3 sticky right-0 z-10 text-center"
                   style={{
                     backgroundColor: rowBg,
                     borderLeft: '2px solid #e5e5e5'
                   }}
                 >
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => onEdit(project)}
-                    className="h-8 w-8 p-0 hover:bg-blue-100"
-                    style={{ color: '#012e64' }}
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </Button>
+                  <div className="flex items-center justify-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onEdit(project)}
+                      className="h-8 w-8 p-0 hover:bg-blue-100"
+                      style={{ color: '#012e64' }}
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </Button>
+                    {onDelete && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onDelete(project)}
+                        className="h-8 w-8 p-0 hover:bg-red-100"
+                        style={{ color: '#dc2626' }}
+                        title="Delete project"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
                 </td>
               </tr>
               )

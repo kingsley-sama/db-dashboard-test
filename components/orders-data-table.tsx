@@ -1,6 +1,6 @@
 "use client"
 
-import { Edit2 } from "lucide-react"
+import { Edit2, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 
@@ -40,10 +40,12 @@ const displayFields = [
 export function OrdersDataTable({
   orders,
   onEdit,
+  onDelete,
   onToggleSupplierPayment,
 }: {
   orders: any[]
   onEdit: (order: any) => void
+  onDelete?: (order: any) => void
   onToggleSupplierPayment?: (order: any, value: boolean) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)

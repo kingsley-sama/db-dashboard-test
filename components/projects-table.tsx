@@ -16,6 +16,8 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
   const [searchTerm, setSearchTerm] = useState("")
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [editingProject, setEditingProject] = useState<any>(null)
+  const [deletingProject, setDeletingProject] = useState<any>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
   const [filterPM, setFilterPM] = useState<string>("")
   const [filterPmType, setFilterPmType] = useState<string>("")
   const [filterStatus, setFilterStatus] = useState<string>("")
@@ -130,6 +132,31 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
       }
     } catch (err: any) {
       return { success: false, error: err.message }
+    }
+  }
+
+  const handleDeleteProject = async () => {
+    if (!deletingProject) return
+    setDeleteLoading(true)
+    setError("")
+    try {
+      const response = await fetch(`/api/projects/${deletingProject.id}`, {
+        method: 'DELETE',
+      })
+      const result = await response.json()
+
+      if (!response.ok) {
+        // Surface the underlying error (e.g. project still has orders)
+        setError(result.error || 'Failed to delete project')
+      } else {
+        setDeletingProject(null)
+        await fetchProjects(currentPage)
+        onProjectsChange?.()
+      }
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setDeleteLoading(false)
     }
   }
 
@@ -350,7 +377,7 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
             </div>
           </div>
         ) : (
-          <ProjectsDataTable projects={projects} onEdit={setEditingProject} />
+          <ProjectsDataTable projects={projects} onEdit={setEditingProject} onDelete={setDeletingProject} />
         )}
       </div>
 
@@ -365,6 +392,42 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
       {/* Edit Dialog */}
       {editingProject && (
         <EditProjectDialog project={editingProject} onClose={() => setEditingProject(null)} onUpdate={handleUpdateProject} />
+      )}
+
+      {/* Delete Confirmation */}
+      {deletingProject && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-6 space-y-4" style={{ border: '1px solid #e5e5e5' }}>
+            <h2 className="text-lg font-semibold" style={{ color: '#012e64' }}>Delete project?</h2>
+            <p className="text-sm" style={{ color: '#5d6b88' }}>
+              This will permanently delete project{" "}
+              <span className="font-semibold" style={{ color: '#012e64' }}>
+                {deletingProject.project_id}
+                {deletingProject.project_name ? ` — ${deletingProject.project_name}` : ""}
+              </span>
+              . This action cannot be undone. Projects that still have orders cannot be deleted.
+            </p>
+            <div className="flex gap-3 justify-end pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setDeletingProject(null)}
+                disabled={deleteLoading}
+                className="hover:bg-gray-50"
+                style={{ borderColor: '#8d9499', color: '#012e64' }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleDeleteProject}
+                disabled={deleteLoading}
+                className="text-white"
+                style={{ backgroundColor: '#dc2626' }}
+              >
+                {deleteLoading ? "Deleting..." : "Delete Project"}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
