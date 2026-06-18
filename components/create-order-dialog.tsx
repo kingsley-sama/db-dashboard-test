@@ -35,6 +35,9 @@ export function CreateOrderDialog({
     unit_price: "",
     pm_type: "",
     discount: "",
+    due_delivery_date: "",
+    questionnaire_received: "",
+    date_information_complete: "",
   })
   const [productCodes, setProductCodes] = useState<ProductCode[]>([])
   const [loading, setLoading] = useState(false)
@@ -137,6 +140,9 @@ export function CreateOrderDialog({
       unit_price: formData.unit_price ? Number.parseFloat(formData.unit_price) : null,
       pm_type: formData.pm_type || null,
       discount: formData.discount ? Number.parseFloat(formData.discount) : null,
+      due_delivery_date: formData.due_delivery_date || null,
+      questionnaire_received: formData.questionnaire_received || null,
+      date_information_complete: formData.date_information_complete || null,
     }
 
     const result = await onCreate(newOrder)
@@ -357,6 +363,45 @@ export function CreateOrderDialog({
                   value={formData.discount}
                   onChange={handleChange}
                   placeholder="0.00"
+                  className="bg-white text-gray-900"
+                  style={{ borderColor: '#8d9499' }}
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Due Delivery Date</label>
+                <Input
+                  name="due_delivery_date"
+                  type="date"
+                  value={formData.due_delivery_date}
+                  onChange={handleChange}
+                  className="bg-white text-gray-900"
+                  style={{ borderColor: '#8d9499' }}
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Questionnaire Received</label>
+                <select
+                  name="questionnaire_received"
+                  value={formData.questionnaire_received}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 rounded-md bg-white text-gray-900 h-10"
+                  style={{ border: '1px solid #8d9499' }}
+                >
+                  <option value="">Select...</option>
+                  <option value="Yes">Yes</option>
+                  <option value="No">No</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Date Info Complete</label>
+                <Input
+                  name="date_information_complete"
+                  type="date"
+                  value={formData.date_information_complete}
+                  onChange={handleChange}
                   className="bg-white text-gray-900"
                   style={{ borderColor: '#8d9499' }}
                 />

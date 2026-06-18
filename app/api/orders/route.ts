@@ -132,6 +132,22 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
+    // questionnaire_received is a project-level field: the
+    // autofill_order_fields_from_project trigger copies it from the project onto
+    // the order on insert. Sync it to the project first so the value the PM
+    // entered actually sticks (otherwise the trigger would overwrite it).
+    const { questionnaire_received, project_id } = body;
+    if (questionnaire_received != null && questionnaire_received !== '' && project_id) {
+      const { error: projectError } = await supabaseAdmin
+        .from('projects')
+        .update({ questionnaire_received })
+        .eq('project_id', project_id);
+
+      if (projectError) {
+        return NextResponse.json({ error: `Failed to update project: ${projectError.message}` }, { status: 500 });
+      }
+    }
+
     // Insert order using admin client
     const { data, error } = await supabaseAdmin
       .from('orders')

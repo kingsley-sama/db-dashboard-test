@@ -37,7 +37,15 @@ const displayFields = [
   { key: "supplier_payment", label: "Supplier Payment", width: "min-w-[150px]" },
 ]
 
-export function OrdersDataTable({ orders, onEdit }: { orders: any[]; onEdit: (order: any) => void }) {
+export function OrdersDataTable({
+  orders,
+  onEdit,
+  onToggleSupplierPayment,
+}: {
+  orders: any[]
+  onEdit: (order: any) => void
+  onToggleSupplierPayment?: (order: any, value: boolean) => void
+}) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const theadRef = useRef<HTMLTableSectionElement>(null)
   const floatingOuterRef = useRef<HTMLDivElement>(null)
@@ -210,13 +218,16 @@ export function OrdersDataTable({ orders, onEdit }: { orders: any[]; onEdit: (or
               const delayed = ["delay_first_delivery", "delay_first_revision", "delay_second_revision"].some(
                 (k) => Number(order[k]) > 0
               )
-              const rowBg = delayed
+              const supplierPaid = Boolean(order.supplier_payment)
+              const rowBg = supplierPaid
+                ? (idx % 2 === 0 ? '#f2fef8' : '#e8fdf2')
+                : delayed
                 ? (idx % 2 === 0 ? '#fef2f2' : '#fee2e2')
                 : (idx % 2 === 0 ? '#ffffff' : '#fafafa')
               return (
               <tr
                 key={order.id}
-                className={`transition-colors ${delayed ? 'hover:bg-red-100' : 'hover:bg-blue-50'}`}
+                className={`transition-colors ${supplierPaid ? 'hover:bg-green-100' : delayed ? 'hover:bg-red-100' : 'hover:bg-blue-50'}`}
                 style={{
                   borderBottom: '1px solid #e5e5e5',
                   backgroundColor: rowBg
@@ -242,7 +253,19 @@ export function OrdersDataTable({ orders, onEdit }: { orders: any[]; onEdit: (or
                       }}
                       title={String(order[field.key] || '')}
                     >
-                      {field.maxWidth ? (
+                      {field.key === "supplier_payment" ? (
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(order.supplier_payment)}
+                            onChange={(e) => onToggleSupplierPayment?.(order, e.target.checked)}
+                            className="h-4 w-4 cursor-pointer accent-green-600"
+                          />
+                          <span style={{ color: order.supplier_payment ? '#047857' : '#5d6b88', fontWeight: 500 }}>
+                            {order.supplier_payment ? "Yes" : "No"}
+                          </span>
+                        </label>
+                      ) : field.maxWidth ? (
                         <div style={{ maxWidth: field.maxWidth, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {formatValue(order[field.key], field.key, order)}
                         </div>

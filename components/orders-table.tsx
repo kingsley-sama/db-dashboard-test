@@ -117,6 +117,34 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
     }
   }
 
+  const handleToggleSupplierPayment = async (order: any, value: boolean) => {
+    // Optimistically update local state
+    setOrders((prev) =>
+      prev.map((o) => (o.id === order.id ? { ...o, supplier_payment: value } : o))
+    )
+
+    try {
+      const response = await fetch(`/api/orders/${order.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ supplier_payment: value })
+      })
+
+      if (!response.ok) {
+        const result = await response.json()
+        throw new Error(result.error || 'Failed to update supplier payment')
+      }
+
+      onOrdersChange?.()
+    } catch (err: any) {
+      // Revert on failure
+      setOrders((prev) =>
+        prev.map((o) => (o.id === order.id ? { ...o, supplier_payment: !value } : o))
+      )
+      setError(err.message)
+    }
+  }
+
   const handlePageChange = (newPage: number) => {
     setCurrentPage(newPage)
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -322,7 +350,7 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
             </div>
           </div>
         ) : (
-          <OrdersDataTable orders={orders} onEdit={setEditingOrder} />
+          <OrdersDataTable orders={orders} onEdit={setEditingOrder} onToggleSupplierPayment={handleToggleSupplierPayment} />
         )}
       </div>
 
