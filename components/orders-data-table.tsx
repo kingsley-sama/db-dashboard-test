@@ -219,15 +219,19 @@ export function OrdersDataTable({
                 (k) => Number(order[k]) > 0
               )
               const supplierPaid = Boolean(order.supplier_payment)
-              const rowBg = supplierPaid
-                ? (idx % 2 === 0 ? '#f2fef8' : '#e8fdf2')
-                : delayed
+              // Whole row turns red when delayed; the order-ID cell turns green
+              // when the supplier has been paid. Both can apply at once
+              // (red row + green order-ID cell).
+              const rowBg = delayed
                 ? (idx % 2 === 0 ? '#fef2f2' : '#fee2e2')
                 : (idx % 2 === 0 ? '#ffffff' : '#fafafa')
+              const orderIdBg = supplierPaid
+                ? (idx % 2 === 0 ? '#f2fef8' : '#e8fdf2')
+                : rowBg
               return (
               <tr
                 key={order.id}
-                className={`transition-colors ${supplierPaid ? 'hover:bg-green-100' : delayed ? 'hover:bg-red-100' : 'hover:bg-blue-50'}`}
+                className={`transition-colors ${delayed ? 'hover:bg-red-100' : 'hover:bg-blue-50'}`}
                 style={{
                   borderBottom: '1px solid #e5e5e5',
                   backgroundColor: rowBg
@@ -244,7 +248,7 @@ export function OrdersDataTable({
                         borderRight: isFirst ? undefined : '1px solid #cbd5e1',
                         ...(isFirst
                           ? {
-                              backgroundColor: rowBg,
+                              backgroundColor: orderIdBg,
                               boxShadow: scrolledX
                                 ? 'inset -1px 0 0 #cbd5e1, 6px 0 8px -4px rgba(0, 0, 0, 0.18)'
                                 : 'inset -1px 0 0 #cbd5e1',

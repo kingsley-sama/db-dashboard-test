@@ -11,6 +11,8 @@ const PROJECT_ENUM_TYPES = [
   'project_status_values',
   'first_next_project',
   'pm_type',
+  'project_manager',
+  'sales_person',
 ];
 
 // GET /api/projects/enums - Postgres enum labels for projects dropdowns (owner only)
