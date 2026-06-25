@@ -62,7 +62,7 @@ const selectColumns = new Set([
 // Amount-style columns get a comparison filter (=, >, <, >=, <=).
 const numericColumns = new Set<string>([])
 
-// Date-ish columns get a from/to range filter typed as dd/mm/yy.
+// Date-ish columns get a single date/range filter typed as mm/dd/yy.
 const isDateKey = (key: string) => key.includes("date") || key === "created_at"
 
 const filterKind = (key: string) =>
@@ -456,13 +456,12 @@ export function ProjectsDataTable({
 
       <div
         ref={floatingOuterRef}
-        aria-hidden="true"
         className="fixed"
         style={{
           top: 68,
           zIndex: 40,
           display: stuck ? 'block' : 'none',
-          pointerEvents: 'none',
+          pointerEvents: 'auto',
         }}
       >
         <div ref={floatingScrollRef} className="overflow-hidden">
@@ -472,6 +471,7 @@ export function ProjectsDataTable({
           >
             <thead style={{ backgroundColor: '#f8f8f8' }}>
               {renderHeaderCells(true)}
+              {renderFilterRow()}
             </thead>
           </table>
         </div>

@@ -272,4 +272,10 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Stop two-finger horizontal scroll from triggering the browser's
+     swipe-to-go-back / forward navigation gesture. */
+  html,
+  body {
+    overscroll-behavior-x: none;
+  }
 }
