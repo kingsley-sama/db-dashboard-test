@@ -158,13 +158,20 @@ export function MultiSelectFilter({
       setOpen(false)
     }
     const close = () => setOpen(false)
+    // Close when the page/an ancestor scrolls (the panel is position:fixed and
+    // would otherwise detach from its button), but ignore scrolling *inside*
+    // the panel itself — that's the user scrolling the option list.
+    const onScroll = (e: Event) => {
+      if (panelRef.current?.contains(e.target as Node)) return
+      close()
+    }
     document.addEventListener("mousedown", onDocClick)
     window.addEventListener("resize", close)
-    window.addEventListener("scroll", close, true)
+    window.addEventListener("scroll", onScroll, true)
     return () => {
       document.removeEventListener("mousedown", onDocClick)
       window.removeEventListener("resize", close)
-      window.removeEventListener("scroll", close, true)
+      window.removeEventListener("scroll", onScroll, true)
     }
   }, [open])
 
