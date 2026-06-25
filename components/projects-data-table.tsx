@@ -1,8 +1,18 @@
 "use client"
 
-import { Edit2, Trash2 } from "lucide-react"
+import { Edit2, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import {
+  ColumnFilter,
+  DateRangeFilter,
+  MultiSelectFilter,
+  NumericFilter,
+  defaultFilter,
+  isFilterActive,
+  matchesDate,
+  matchesNumeric,
+} from "@/components/data-table-filters"
 
 const displayFields = [
   { key: "project_id", label: "Project ID", width: "min-w-[140px]" },
@@ -32,6 +42,38 @@ const displayFields = [
   { key: "created_at", label: "Date Entry", width: "min-w-[140px]" },
 ]
 
+// Columns whose filter is a multi-select dropdown of the distinct values
+// present in the data (pick any number) rather than a free-text "contains" box.
+const selectColumns = new Set([
+  "client_rating",
+  "project_status",
+  "project_manager",
+  "pm_type",
+  "sales_person",
+  "project_type",
+  "construction_type",
+  "property_type",
+  "first_or_next_project",
+  "questionnaire_received",
+  "deposit",
+  "partial_invoice",
+])
+
+// Amount-style columns get a comparison filter (=, >, <, >=, <=).
+const numericColumns = new Set<string>([])
+
+// Date-ish columns get a from/to range filter typed as dd/mm/yy.
+const isDateKey = (key: string) => key.includes("date") || key === "created_at"
+
+const filterKind = (key: string) =>
+  selectColumns.has(key)
+    ? "multi"
+    : numericColumns.has(key)
+    ? "numeric"
+    : isDateKey(key)
+    ? "date"
+    : "text"
+
 export function ProjectsDataTable({
   projects,
   onEdit,
@@ -52,7 +94,11 @@ export function ProjectsDataTable({
 
   const measure = () => {
     if (!theadRef.current || !scrollRef.current) return
-    const ths = theadRef.current.querySelectorAll("th")
+    // Measure only the label row (rows[0]); the filter row below it mirrors the
+    // same column widths and must not offset the floating-header measurements.
+    const labelRow = theadRef.current.rows[0]
+    if (!labelRow) return
+    const ths = labelRow.querySelectorAll("th")
     setColWidths(Array.from(ths).map((th) => th.getBoundingClientRect().width))
     setTableWidth(scrollRef.current.scrollWidth)
   }
@@ -123,6 +169,54 @@ export function ProjectsDataTable({
     return value
   }
 
+  // Per-column filters. Text/multi columns filter against the *displayed*
+  // value, so what the user types/picks matches what they see in the cell
+  // (status labels, Yes/No, etc.).
+  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilter>>({})
+  const getFilter = (key: string): ColumnFilter =>
+    columnFilters[key] ?? defaultFilter(filterKind(key))
+  const setColumnFilter = (key: string, filter: ColumnFilter) =>
+    setColumnFilters((prev) => ({ ...prev, [key]: filter }))
+  const clearFilters = () => setColumnFilters({})
+  const activeFilterCount = Object.values(columnFilters).filter(isFilterActive).length
+
+  // Distinct values for dropdown columns, derived from the loaded rows.
+  const filterOptions = useMemo(() => {
+    const map: Record<string, string[]> = {}
+    for (const field of displayFields) {
+      if (!selectColumns.has(field.key)) continue
+      const set = new Set<string>()
+      for (const project of projects) {
+        const formatted = String(formatValue(project[field.key], field.key) ?? "")
+        if (formatted && formatted !== "-") set.add(formatted)
+      }
+      map[field.key] = Array.from(set).sort((a, b) =>
+        a.localeCompare(b, undefined, { numeric: true })
+      )
+    }
+    return map
+  }, [projects])
+
+  const filteredProjects = useMemo(() => {
+    const active = Object.entries(columnFilters).filter(([, f]) => isFilterActive(f))
+    if (active.length === 0) return projects
+    return projects.filter((project) =>
+      active.every(([key, filter]) => {
+        const display = String(formatValue(project[key], key) ?? "")
+        switch (filter.kind) {
+          case "multi":
+            return filter.values.includes(display)
+          case "numeric":
+            return matchesNumeric(display, filter)
+          case "date":
+            return matchesDate(project[key], filter)
+          default:
+            return display.toLowerCase().includes(filter.value.trim().toLowerCase())
+        }
+      })
+    )
+  }, [projects, columnFilters])
+
   const renderHeaderCells = (fixedWidths: boolean) => (
     <tr style={{ borderBottom: '2px solid #e5e5e5' }}>
       {displayFields.map((field, i) => {
@@ -171,19 +265,103 @@ export function ProjectsDataTable({
     </tr>
   )
 
+  const renderFilterRow = () => (
+    <tr style={{ borderBottom: '2px solid #e5e5e5' }}>
+      {displayFields.map((field, i) => {
+        const isFirst = i === 0
+        const filter = getFilter(field.key)
+        return (
+          <th
+            key={field.key}
+            className={`${field.width} px-2 py-2 align-top font-normal${isFirst ? ' sticky left-0 z-40' : ''}`}
+            style={{
+              backgroundColor: '#f8f8f8',
+              borderRight: isFirst ? undefined : '1px solid #cbd5e1',
+              ...(isFirst
+                ? {
+                    boxShadow: scrolledX
+                      ? 'inset -1px 0 0 #cbd5e1, 6px 0 8px -4px rgba(0, 0, 0, 0.18)'
+                      : 'inset -1px 0 0 #cbd5e1',
+                  }
+                : {}),
+            }}
+          >
+            {filter.kind === "multi" ? (
+              <MultiSelectFilter
+                options={filterOptions[field.key] ?? []}
+                values={filter.values}
+                onChange={(values) => setColumnFilter(field.key, { kind: "multi", values })}
+              />
+            ) : filter.kind === "numeric" ? (
+              <NumericFilter filter={filter} onChange={(f) => setColumnFilter(field.key, f)} />
+            ) : filter.kind === "date" ? (
+              <DateRangeFilter filter={filter} onChange={(f) => setColumnFilter(field.key, f)} />
+            ) : (
+              <input
+                type="text"
+                value={filter.value}
+                onChange={(e) => setColumnFilter(field.key, { kind: "text", value: e.target.value })}
+                placeholder="Contains…"
+                title="Filter: shows rows containing this text"
+                className="w-full min-w-0 px-2 py-1 rounded text-xs bg-white"
+                style={{ border: '1px solid #cbd5e1', color: '#012e64' }}
+              />
+            )}
+          </th>
+        )
+      })}
+      <th
+        className="min-w-[110px] px-2 py-2 sticky right-0 z-40 text-center align-middle"
+        style={{ backgroundColor: '#f8f8f8', borderLeft: '2px solid #e5e5e5' }}
+      >
+        {activeFilterCount > 0 && (
+          <button
+            onClick={clearFilters}
+            title="Clear all filters"
+            className="inline-flex items-center justify-center h-7 w-7 rounded hover:bg-blue-100 transition-colors"
+            style={{ color: '#012e64' }}
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </th>
+    </tr>
+  )
+
   return (
     <div className="relative">
+      {activeFilterCount > 0 && (
+        <div
+          className="flex items-center justify-between px-4 py-2 text-sm"
+          style={{ backgroundColor: '#f0f7ff', borderBottom: '1px solid #d0e7ff', color: '#5d6b88' }}
+        >
+          <span>
+            Showing <span className="font-semibold" style={{ color: '#012e64' }}>{filteredProjects.length}</span> of{" "}
+            <span className="font-semibold" style={{ color: '#012e64' }}>{projects.length}</span> on this page
+            {" "}({activeFilterCount} column {activeFilterCount === 1 ? 'filter' : 'filters'})
+          </span>
+          <button
+            onClick={clearFilters}
+            className="flex items-center gap-1 font-medium hover:underline"
+            style={{ color: '#012e64' }}
+          >
+            <X className="w-4 h-4" />
+            Clear filters
+          </button>
+        </div>
+      )}
       <div
         ref={scrollRef}
         className="overflow-x-auto relative border-t"
-        style={{ borderColor: '#e5e5e5' }}
+        style={{ borderColor: '#e5e5e5', overscrollBehaviorX: 'contain' }}
       >
         <table className="w-full border-collapse text-sm">
           <thead ref={theadRef} style={{ backgroundColor: '#f8f8f8' }}>
             {renderHeaderCells(false)}
+            {renderFilterRow()}
           </thead>
           <tbody>
-            {projects.map((project, idx) => {
+            {filteredProjects.map((project, idx) => {
               const rowBg = idx % 2 === 0 ? '#ffffff' : '#fafafa'
               return (
               <tr
@@ -258,9 +436,20 @@ export function ProjectsDataTable({
             })}
           </tbody>
         </table>
-        {projects.length === 0 && (
-          <div className="flex items-center justify-center h-64">
-            <p className="text-gray-500">No projects found</p>
+        {filteredProjects.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-64 gap-2">
+            <p className="text-gray-500">
+              {projects.length === 0 ? "No projects found" : "No projects match the current filters"}
+            </p>
+            {projects.length > 0 && activeFilterCount > 0 && (
+              <button
+                onClick={clearFilters}
+                className="text-sm font-medium hover:underline"
+                style={{ color: '#012e64' }}
+              >
+                Clear filters
+              </button>
+            )}
           </div>
         )}
       </div>

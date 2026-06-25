@@ -3,6 +3,16 @@
 import { Edit2, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import {
+  ColumnFilter,
+  DateRangeFilter,
+  MultiSelectFilter,
+  NumericFilter,
+  defaultFilter,
+  isFilterActive,
+  matchesDate,
+  matchesNumeric,
+} from "@/components/data-table-filters"
 
 const displayFields = [
   { key: "order_id", label: "Order ID", width: "min-w-[140px]" },
@@ -37,10 +47,11 @@ const displayFields = [
   { key: "supplier_payment", label: "Supplier Payment", width: "min-w-[150px]" },
 ]
 
-// Columns whose filter is a dropdown of the distinct values present in the data
-// (rather than a free-text "contains" box).
+// Columns whose filter is a multi-select dropdown of the distinct values
+// present in the data (pick any number) rather than a free-text "contains" box.
 const selectColumns = new Set([
   "client_rating",
+  "product_name",
   "PM",
   "pm_type",
   "supplier",
@@ -48,6 +59,31 @@ const selectColumns = new Set([
   "deposit",
   "supplier_payment",
 ])
+
+// Amount-style columns get a comparison filter (=, >, <, >=, <=) against the
+// number shown in the cell.
+const numericColumns = new Set([
+  "quantity",
+  "cost",
+  "profit_margin",
+  "net_sum",
+  "discount",
+  "delay_first_delivery",
+  "delay_first_revision",
+  "delay_second_revision",
+])
+
+// Date-ish columns get a from/to range filter typed as dd/mm/yy.
+const isDateKey = (key: string) => key.includes("date") || key === "created_at"
+
+const filterKind = (key: string) =>
+  selectColumns.has(key)
+    ? "multi"
+    : numericColumns.has(key)
+    ? "numeric"
+    : isDateKey(key)
+    ? "date"
+    : "text"
 
 export function OrdersDataTable({
   orders,
@@ -172,14 +208,16 @@ export function OrdersDataTable({
     return value
   }
 
-  // Per-column filters. Each column filters against its *displayed* value, so
-  // what the user types/picks matches what they see in the cell (formatted
-  // dates, "€" amounts, "Yes"/"No", computed margins, etc.).
-  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
-  const setColumnFilter = (key: string, value: string) =>
-    setColumnFilters((prev) => ({ ...prev, [key]: value }))
+  // Per-column filters. Text/multi/numeric columns filter against the
+  // *displayed* value, so what the user types/picks matches what they see in
+  // the cell (formatted "€" amounts, "Yes"/"No", computed margins, etc.).
+  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilter>>({})
+  const getFilter = (key: string): ColumnFilter =>
+    columnFilters[key] ?? defaultFilter(filterKind(key))
+  const setColumnFilter = (key: string, filter: ColumnFilter) =>
+    setColumnFilters((prev) => ({ ...prev, [key]: filter }))
   const clearFilters = () => setColumnFilters({})
-  const activeFilterCount = Object.values(columnFilters).filter((v) => v !== "").length
+  const activeFilterCount = Object.values(columnFilters).filter(isFilterActive).length
 
   // Distinct values for dropdown columns, derived from the loaded rows.
   const filterOptions = useMemo(() => {
@@ -199,13 +237,21 @@ export function OrdersDataTable({
   }, [orders])
 
   const filteredOrders = useMemo(() => {
-    const active = Object.entries(columnFilters).filter(([, v]) => v !== "")
+    const active = Object.entries(columnFilters).filter(([, f]) => isFilterActive(f))
     if (active.length === 0) return orders
     return orders.filter((order) =>
-      active.every(([key, val]) => {
-        const formatted = String(formatValue(order[key], key, order) ?? "")
-        if (selectColumns.has(key)) return formatted === val
-        return formatted.toLowerCase().includes(val.toLowerCase())
+      active.every(([key, filter]) => {
+        const display = String(formatValue(order[key], key, order) ?? "")
+        switch (filter.kind) {
+          case "multi":
+            return filter.values.includes(display)
+          case "numeric":
+            return matchesNumeric(display, filter)
+          case "date":
+            return matchesDate(order[key], filter)
+          default:
+            return display.toLowerCase().includes(filter.value.trim().toLowerCase())
+        }
       })
     )
   }, [orders, columnFilters])
@@ -262,8 +308,7 @@ export function OrdersDataTable({
     <tr style={{ borderBottom: '2px solid #e5e5e5' }}>
       {displayFields.map((field, i) => {
         const isFirst = i === 0
-        const value = columnFilters[field.key] || ""
-        const isSelect = selectColumns.has(field.key)
+        const filter = getFilter(field.key)
         return (
           <th
             key={field.key}
@@ -280,26 +325,23 @@ export function OrdersDataTable({
                 : {}),
             }}
           >
-            {isSelect ? (
-              <select
-                value={value}
-                onChange={(e) => setColumnFilter(field.key, e.target.value)}
-                className="w-full min-w-0 px-2 py-1 rounded text-xs bg-white"
-                style={{ border: '1px solid #cbd5e1', color: value ? '#012e64' : '#8d9499' }}
-              >
-                <option value="">All</option>
-                {filterOptions[field.key]?.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
+            {filter.kind === "multi" ? (
+              <MultiSelectFilter
+                options={filterOptions[field.key] ?? []}
+                values={filter.values}
+                onChange={(values) => setColumnFilter(field.key, { kind: "multi", values })}
+              />
+            ) : filter.kind === "numeric" ? (
+              <NumericFilter filter={filter} onChange={(f) => setColumnFilter(field.key, f)} />
+            ) : filter.kind === "date" ? (
+              <DateRangeFilter filter={filter} onChange={(f) => setColumnFilter(field.key, f)} />
             ) : (
               <input
                 type="text"
-                value={value}
-                onChange={(e) => setColumnFilter(field.key, e.target.value)}
-                placeholder="Filter…"
+                value={filter.value}
+                onChange={(e) => setColumnFilter(field.key, { kind: "text", value: e.target.value })}
+                placeholder="Contains…"
+                title="Filter: shows rows containing this text"
                 className="w-full min-w-0 px-2 py-1 rounded text-xs bg-white"
                 style={{ border: '1px solid #cbd5e1', color: '#012e64' }}
               />
@@ -350,7 +392,7 @@ export function OrdersDataTable({
       <div
         ref={scrollRef}
         className="overflow-x-auto relative border-t"
-        style={{ borderColor: '#e5e5e5' }}
+        style={{ borderColor: '#e5e5e5', overscrollBehaviorX: 'contain' }}
       >
         <table className="w-full border-collapse text-sm">
           <thead ref={theadRef} style={{ backgroundColor: '#f8f8f8' }}>
