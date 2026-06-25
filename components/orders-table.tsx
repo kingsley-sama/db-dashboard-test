@@ -4,10 +4,14 @@ import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Plus, Search, Filter, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react"
+import { Plus, Search, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react"
 import { OrdersDataTable } from "@/components/orders-data-table"
 import { CreateOrderDialog } from "@/components/create-order-dialog"
 import { EditOrderDialog } from "@/components/edit-order-dialog"
+import useSWR from "swr"
+import { User } from "@/lib/db/schema"
+
+const fetcher = (url: string) => fetch(url).then((res) => res.json())
 
 export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void }) {
   const [orders, setOrders] = useState<any[]>([])
@@ -16,8 +20,11 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
   const [searchTerm, setSearchTerm] = useState("")
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [editingOrder, setEditingOrder] = useState<any>(null)
-  const [filterPM, setFilterPM] = useState<string>("")
-  const [filterPmType, setFilterPmType] = useState<string>("")
+  const [deletingOrder, setDeletingOrder] = useState<any>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+  const { data: user } = useSWR<User>("/api/user", fetcher)
+  // Only owners and admins may delete orders (also enforced server-side).
+  const canDelete = user?.role === "owner" || user?.role === "admin"
   const [currentPage, setCurrentPage] = useState(1)
   const [pagination, setPagination] = useState({
     page: 1,
@@ -29,7 +36,7 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
   // Fetch orders when page, search, or filter changes
   useEffect(() => {
     fetchOrders(currentPage)
-  }, [currentPage, searchTerm, filterPM, filterPmType])
+  }, [currentPage, searchTerm])
 
   const fetchOrders = async (page = 1) => {
     setLoading(true)
@@ -41,9 +48,7 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
       })
       
       if (searchTerm) params.append('search', searchTerm)
-      if (filterPM) params.append('filterPM', filterPM)
-      if (filterPmType) params.append('filterPmType', filterPmType)
-      
+
       const response = await fetch(`/api/orders?${params.toString()}`)
       const result = await response.json()
 
@@ -61,12 +66,12 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
     }
   }
 
-  // Reset to page 1 when search or filter changes
+  // Reset to page 1 when the search term changes
   useEffect(() => {
     if (currentPage !== 1) {
       setCurrentPage(1)
     }
-  }, [searchTerm, filterPM, filterPmType])
+  }, [searchTerm])
 
   // Handle search and filter
   // Note: Search and filter are now handled on the backend across all data
@@ -142,6 +147,31 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
         prev.map((o) => (o.id === order.id ? { ...o, supplier_payment: !value } : o))
       )
       setError(err.message)
+    }
+  }
+
+  const handleDeleteOrder = async () => {
+    if (!deletingOrder) return
+    setDeleteLoading(true)
+    setError("")
+    try {
+      const response = await fetch(`/api/orders/${deletingOrder.id}`, {
+        method: 'DELETE',
+      })
+      const result = await response.json()
+
+      if (!response.ok) {
+        // Surface the underlying error (e.g. 403 for non-owner/admin)
+        setError(result.error || 'Failed to delete order')
+      } else {
+        setDeletingOrder(null)
+        await fetchOrders(currentPage)
+        onOrdersChange?.()
+      }
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setDeleteLoading(false)
     }
   }
 
@@ -280,40 +310,9 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
               {pagination.total.toLocaleString()}
             </div>
             <div className="text-sm font-medium" style={{ color: '#5d6b88' }}>
-              Total Orders{searchTerm || filterPM || filterPmType ? ' (filtered)' : ''}
+              Total Orders{searchTerm ? ' (filtered)' : ''}
             </div>
           </div>
-        </div>
-
-        {/* Filter Bar */}
-        <div className="flex flex-wrap gap-3 items-center">
-          <div className="flex items-center gap-2" style={{ color: '#5d6b88' }}>
-            <Filter className="w-4 h-4" />
-            <span className="text-sm font-medium">Filter:</span>
-          </div>
-          {/* PM Filter */}
-          <select
-            value={filterPM}
-            onChange={(e) => setFilterPM(e.target.value)}
-            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white"
-            style={{ border: '1px solid #8d9499', color: filterPM ? '#012e64' : '#5d6b88' }}
-          >
-            <option value="">All PMs</option>
-            {["Viktoria", "Sonia", "Vivien", "Nesrin", "Ani", "Viktoria & Sonia", "Viktoria und Vivien", "Sonia und Vivien", "Sonia & CH"].map((pm) => (
-              <option key={pm} value={pm}>{pm}</option>
-            ))}
-          </select>
-          {/* PM Type Filter */}
-          <select
-            value={filterPmType}
-            onChange={(e) => setFilterPmType(e.target.value)}
-            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white"
-            style={{ border: '1px solid #8d9499', color: filterPmType ? '#012e64' : '#5d6b88' }}
-          >
-            <option value="">All PM Types</option>
-            <option value="dedicated">Dedicated</option>
-            <option value="general">General</option>
-          </select>
         </div>
 
         {/* Current Page Info */}
@@ -350,7 +349,7 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
             </div>
           </div>
         ) : (
-          <OrdersDataTable orders={orders} onEdit={setEditingOrder} onToggleSupplierPayment={handleToggleSupplierPayment} />
+          <OrdersDataTable orders={orders} onEdit={setEditingOrder} onDelete={canDelete ? setDeletingOrder : undefined} onToggleSupplierPayment={handleToggleSupplierPayment} />
         )}
       </div>
 
@@ -365,6 +364,42 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
       {/* Edit Dialog */}
       {editingOrder && (
         <EditOrderDialog order={editingOrder} onClose={() => setEditingOrder(null)} onUpdate={handleUpdateOrder} />
+      )}
+
+      {/* Delete Confirmation — owner/admin only (gated above and server-side) */}
+      {deletingOrder && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-6 space-y-4" style={{ border: '1px solid #e5e5e5' }}>
+            <h2 className="text-lg font-semibold" style={{ color: '#012e64' }}>Delete order?</h2>
+            <p className="text-sm" style={{ color: '#5d6b88' }}>
+              This will permanently delete order{" "}
+              <span className="font-semibold" style={{ color: '#012e64' }}>
+                {deletingOrder.order_id}
+                {deletingOrder.company_name ? ` — ${deletingOrder.company_name}` : ""}
+              </span>
+              . This action cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setDeletingOrder(null)}
+                disabled={deleteLoading}
+                className="hover:bg-gray-50"
+                style={{ borderColor: '#8d9499', color: '#012e64' }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleDeleteOrder}
+                disabled={deleteLoading}
+                className="text-white"
+                style={{ backgroundColor: '#dc2626' }}
+              >
+                {deleteLoading ? "Deleting..." : "Delete Order"}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

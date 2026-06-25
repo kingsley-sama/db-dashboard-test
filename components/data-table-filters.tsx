@@ -289,7 +289,7 @@ export function DateRangeFilter({
       inputMode="numeric"
       value={filter.text}
       onChange={(e) => onChange({ kind: "date", text: e.target.value })}
-      placeholder="mm/dd/yy[-mm/dd/yy]"
+      placeholder="mm/dd/yy-mm/dd/yy"
       title="Type one date (mm/dd/yy) or a range (mm/dd/yy-mm/dd/yy), e.g. 06/25/26-06/30/26"
       className={inputClass}
       style={inputStyle}

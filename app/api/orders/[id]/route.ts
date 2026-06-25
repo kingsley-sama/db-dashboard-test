@@ -72,8 +72,8 @@ export async function DELETE(
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    // Only owners may delete orders
-    if (user.role !== 'owner') {
+    // Only owners and admins may delete orders
+    if (user.role !== 'owner' && user.role !== 'admin') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

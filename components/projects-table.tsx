@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Plus, Search, Filter, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react"
+import { Plus, Search, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react"
 import { ProjectsDataTable } from "@/components/projects-data-table"
 import { CreateProjectDialog } from "@/components/create-project-dialog"
 import { EditProjectDialog } from "@/components/edit-project-dialog"
@@ -18,10 +18,6 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
   const [editingProject, setEditingProject] = useState<any>(null)
   const [deletingProject, setDeletingProject] = useState<any>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
-  const [filterPM, setFilterPM] = useState<string>("")
-  const [filterPmType, setFilterPmType] = useState<string>("")
-  const [filterStatus, setFilterStatus] = useState<string>("")
-  const [statusOptions, setStatusOptions] = useState<string[]>([])
   const [currentPage, setCurrentPage] = useState(1)
   const [pagination, setPagination] = useState({
     page: 1,
@@ -33,23 +29,7 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
   // Fetch projects when page, search, or filter changes
   useEffect(() => {
     fetchProjects(currentPage)
-  }, [currentPage, searchTerm, filterPM, filterPmType, filterStatus])
-
-  // Fetch project status options for the filter dropdown
-  useEffect(() => {
-    const fetchEnums = async () => {
-      try {
-        const response = await fetch('/api/projects/enums')
-        if (response.ok) {
-          const result = await response.json()
-          setStatusOptions(result.enums?.project_status_values || [])
-        }
-      } catch {
-        // Filter dropdown will just render empty if enums fail to load
-      }
-    }
-    fetchEnums()
-  }, [])
+  }, [currentPage, searchTerm])
 
   const fetchProjects = async (page = 1) => {
     setLoading(true)
@@ -61,9 +41,6 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
       })
 
       if (searchTerm) params.append('search', searchTerm)
-      if (filterPM) params.append('filterPM', filterPM)
-      if (filterPmType) params.append('filterPmType', filterPmType)
-      if (filterStatus) params.append('filterStatus', filterStatus)
 
       const response = await fetch(`/api/projects?${params.toString()}`)
       const result = await response.json()
@@ -82,12 +59,12 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
     }
   }
 
-  // Reset to page 1 when search or filter changes
+  // Reset to page 1 when the search term changes
   useEffect(() => {
     if (currentPage !== 1) {
       setCurrentPage(1)
     }
-  }, [searchTerm, filterPM, filterPmType, filterStatus])
+  }, [searchTerm])
 
   const handleCreateProject = async (newProject: any) => {
     try {
@@ -295,52 +272,9 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
               {pagination.total.toLocaleString()}
             </div>
             <div className="text-sm font-medium" style={{ color: '#5d6b88' }}>
-              Total Projects{searchTerm || filterPM || filterPmType || filterStatus ? ' (filtered)' : ''}
+              Total Projects{searchTerm ? ' (filtered)' : ''}
             </div>
           </div>
-        </div>
-
-        {/* Filter Bar */}
-        <div className="flex flex-wrap gap-3 items-center">
-          <div className="flex items-center gap-2" style={{ color: '#5d6b88' }}>
-            <Filter className="w-4 h-4" />
-            <span className="text-sm font-medium">Filter:</span>
-          </div>
-          {/* PM Filter */}
-          <select
-            value={filterPM}
-            onChange={(e) => setFilterPM(e.target.value)}
-            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white"
-            style={{ border: '1px solid #8d9499', color: filterPM ? '#012e64' : '#5d6b88' }}
-          >
-            <option value="">All PMs</option>
-            {["Viktoria", "Sonia", "Vivien", "Nesrin", "Ani", "Viktoria & Sonia", "Viktoria und Vivien", "Sonia und Vivien", "Sonia & CH"].map((pm) => (
-              <option key={pm} value={pm}>{pm}</option>
-            ))}
-          </select>
-          {/* PM Type Filter */}
-          <select
-            value={filterPmType}
-            onChange={(e) => setFilterPmType(e.target.value)}
-            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white"
-            style={{ border: '1px solid #8d9499', color: filterPmType ? '#012e64' : '#5d6b88' }}
-          >
-            <option value="">All PM Types</option>
-            <option value="dedicated">Dedicated</option>
-            <option value="general">General</option>
-          </select>
-          {/* Project Status Filter */}
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white"
-            style={{ border: '1px solid #8d9499', color: filterStatus ? '#012e64' : '#5d6b88' }}
-          >
-            <option value="">All Statuses</option>
-            {statusOptions.map((status) => (
-              <option key={status} value={status}>{status}</option>
-            ))}
-          </select>
         </div>
 
         {/* Current Page Info */}
