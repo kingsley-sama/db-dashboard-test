@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { getUser } from '@/lib/db/queries';
 import { SecuritySettings } from './security-settings';
 import { UserManagement } from './user-management';
+import { EnvironmentVariables } from './environment-variables';
 
 export default async function SecurityPage() {
   const user = await getUser();
@@ -14,7 +15,12 @@ export default async function SecurityPage() {
       <h1 className="text-lg lg:text-2xl font-medium bold text-gray-900 mb-6">
         Security Settings
       </h1>
-      {user.role === 'owner' && <UserManagement currentUserId={user.id} />}
+      {user.role === 'owner' && (
+        <>
+          <UserManagement currentUserId={user.id} />
+          <EnvironmentVariables />
+        </>
+      )}
       <SecuritySettings />
     </section>
   );

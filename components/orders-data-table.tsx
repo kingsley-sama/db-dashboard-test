@@ -1,8 +1,8 @@
 "use client"
 
-import { Edit2, Trash2 } from "lucide-react"
+import { Edit2, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 
 const displayFields = [
   { key: "order_id", label: "Order ID", width: "min-w-[140px]" },
@@ -37,6 +37,18 @@ const displayFields = [
   { key: "supplier_payment", label: "Supplier Payment", width: "min-w-[150px]" },
 ]
 
+// Columns whose filter is a dropdown of the distinct values present in the data
+// (rather than a free-text "contains" box).
+const selectColumns = new Set([
+  "client_rating",
+  "PM",
+  "pm_type",
+  "supplier",
+  "customer_type",
+  "deposit",
+  "supplier_payment",
+])
+
 export function OrdersDataTable({
   orders,
   onEdit,
@@ -59,7 +71,11 @@ export function OrdersDataTable({
 
   const measure = () => {
     if (!theadRef.current || !scrollRef.current) return
-    const ths = theadRef.current.querySelectorAll("th")
+    // Measure only the label row (rows[0]); the filter row below it mirrors the
+    // same column widths and must not offset the floating-header measurements.
+    const labelRow = theadRef.current.rows[0]
+    if (!labelRow) return
+    const ths = labelRow.querySelectorAll("th")
     setColWidths(Array.from(ths).map((th) => th.getBoundingClientRect().width))
     setTableWidth(scrollRef.current.scrollWidth)
   }
@@ -156,6 +172,44 @@ export function OrdersDataTable({
     return value
   }
 
+  // Per-column filters. Each column filters against its *displayed* value, so
+  // what the user types/picks matches what they see in the cell (formatted
+  // dates, "€" amounts, "Yes"/"No", computed margins, etc.).
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
+  const setColumnFilter = (key: string, value: string) =>
+    setColumnFilters((prev) => ({ ...prev, [key]: value }))
+  const clearFilters = () => setColumnFilters({})
+  const activeFilterCount = Object.values(columnFilters).filter((v) => v !== "").length
+
+  // Distinct values for dropdown columns, derived from the loaded rows.
+  const filterOptions = useMemo(() => {
+    const map: Record<string, string[]> = {}
+    for (const field of displayFields) {
+      if (!selectColumns.has(field.key)) continue
+      const set = new Set<string>()
+      for (const order of orders) {
+        const formatted = String(formatValue(order[field.key], field.key, order) ?? "")
+        if (formatted && formatted !== "-") set.add(formatted)
+      }
+      map[field.key] = Array.from(set).sort((a, b) =>
+        a.localeCompare(b, undefined, { numeric: true })
+      )
+    }
+    return map
+  }, [orders])
+
+  const filteredOrders = useMemo(() => {
+    const active = Object.entries(columnFilters).filter(([, v]) => v !== "")
+    if (active.length === 0) return orders
+    return orders.filter((order) =>
+      active.every(([key, val]) => {
+        const formatted = String(formatValue(order[key], key, order) ?? "")
+        if (selectColumns.has(key)) return formatted === val
+        return formatted.toLowerCase().includes(val.toLowerCase())
+      })
+    )
+  }, [orders, columnFilters])
+
   const renderHeaderCells = (fixedWidths: boolean) => (
     <tr style={{ borderBottom: '2px solid #e5e5e5' }}>
       {displayFields.map((field, i) => {
@@ -204,8 +258,95 @@ export function OrdersDataTable({
     </tr>
   )
 
+  const renderFilterRow = () => (
+    <tr style={{ borderBottom: '2px solid #e5e5e5' }}>
+      {displayFields.map((field, i) => {
+        const isFirst = i === 0
+        const value = columnFilters[field.key] || ""
+        const isSelect = selectColumns.has(field.key)
+        return (
+          <th
+            key={field.key}
+            className={`${field.width} px-2 py-2 align-top font-normal${isFirst ? ' sticky left-0 z-40' : ''}`}
+            style={{
+              backgroundColor: '#f8f8f8',
+              borderRight: isFirst ? undefined : '1px solid #cbd5e1',
+              ...(isFirst
+                ? {
+                    boxShadow: scrolledX
+                      ? 'inset -1px 0 0 #cbd5e1, 6px 0 8px -4px rgba(0, 0, 0, 0.18)'
+                      : 'inset -1px 0 0 #cbd5e1',
+                  }
+                : {}),
+            }}
+          >
+            {isSelect ? (
+              <select
+                value={value}
+                onChange={(e) => setColumnFilter(field.key, e.target.value)}
+                className="w-full min-w-0 px-2 py-1 rounded text-xs bg-white"
+                style={{ border: '1px solid #cbd5e1', color: value ? '#012e64' : '#8d9499' }}
+              >
+                <option value="">All</option>
+                {filterOptions[field.key]?.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={value}
+                onChange={(e) => setColumnFilter(field.key, e.target.value)}
+                placeholder="Filter…"
+                className="w-full min-w-0 px-2 py-1 rounded text-xs bg-white"
+                style={{ border: '1px solid #cbd5e1', color: '#012e64' }}
+              />
+            )}
+          </th>
+        )
+      })}
+      <th
+        className="min-w-[80px] px-2 py-2 sticky right-0 z-40 text-center align-middle"
+        style={{ backgroundColor: '#f8f8f8', borderLeft: '2px solid #e5e5e5' }}
+      >
+        {activeFilterCount > 0 && (
+          <button
+            onClick={clearFilters}
+            title="Clear all filters"
+            className="inline-flex items-center justify-center h-7 w-7 rounded hover:bg-blue-100 transition-colors"
+            style={{ color: '#012e64' }}
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </th>
+    </tr>
+  )
+
   return (
     <div className="relative">
+      {activeFilterCount > 0 && (
+        <div
+          className="flex items-center justify-between px-4 py-2 text-sm"
+          style={{ backgroundColor: '#f0f7ff', borderBottom: '1px solid #d0e7ff', color: '#5d6b88' }}
+        >
+          <span>
+            Showing <span className="font-semibold" style={{ color: '#012e64' }}>{filteredOrders.length}</span> of{" "}
+            <span className="font-semibold" style={{ color: '#012e64' }}>{orders.length}</span> on this page
+            {" "}({activeFilterCount} column {activeFilterCount === 1 ? 'filter' : 'filters'})
+          </span>
+          <button
+            onClick={clearFilters}
+            className="flex items-center gap-1 font-medium hover:underline"
+            style={{ color: '#012e64' }}
+          >
+            <X className="w-4 h-4" />
+            Clear filters
+          </button>
+        </div>
+      )}
       <div
         ref={scrollRef}
         className="overflow-x-auto relative border-t"
@@ -214,9 +355,10 @@ export function OrdersDataTable({
         <table className="w-full border-collapse text-sm">
           <thead ref={theadRef} style={{ backgroundColor: '#f8f8f8' }}>
             {renderHeaderCells(false)}
+            {renderFilterRow()}
           </thead>
           <tbody>
-            {orders.map((order, idx) => {
+            {filteredOrders.map((order, idx) => {
               const delayed = ["delay_first_delivery", "delay_first_revision", "delay_second_revision"].some(
                 (k) => Number(order[k]) > 0
               )
@@ -301,9 +443,20 @@ export function OrdersDataTable({
             })}
           </tbody>
         </table>
-        {orders.length === 0 && (
-          <div className="flex items-center justify-center h-64">
-            <p className="text-gray-500">No orders found</p>
+        {filteredOrders.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-64 gap-2">
+            <p className="text-gray-500">
+              {orders.length === 0 ? "No orders found" : "No orders match the current filters"}
+            </p>
+            {orders.length > 0 && activeFilterCount > 0 && (
+              <button
+                onClick={clearFilters}
+                className="text-sm font-medium hover:underline"
+                style={{ color: '#012e64' }}
+              >
+                Clear filters
+              </button>
+            )}
           </div>
         )}
       </div>
