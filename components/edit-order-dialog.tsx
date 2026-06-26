@@ -355,22 +355,22 @@ export function EditOrderDialog({
                 <h3 className="text-base font-semibold mb-3" style={{ color: '#012e64' }}>Delivery Dates</h3>
               </div>
               <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Due Delivery Date</label>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Date Information Complete</label>
                 <Input
-                  name="due_delivery_date"
+                  name="date_information_complete"
                   type="date"
-                  value={formData.due_delivery_date ? formData.due_delivery_date.split("T")[0] : ""}
+                  value={formData.date_information_complete ? formData.date_information_complete.split("T")[0] : ""}
                   onChange={handleChange}
                   className="bg-white"
                   style={{ borderColor: '#8d9499', color: '#012e64' }}
                 />
               </div>
               <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Date Information Complete</label>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Due Delivery Date</label>
                 <Input
-                  name="date_information_complete"
+                  name="due_delivery_date"
                   type="date"
-                  value={formData.date_information_complete ? formData.date_information_complete.split("T")[0] : ""}
+                  value={formData.due_delivery_date ? formData.due_delivery_date.split("T")[0] : ""}
                   onChange={handleChange}
                   className="bg-white"
                   style={{ borderColor: '#8d9499', color: '#012e64' }}
