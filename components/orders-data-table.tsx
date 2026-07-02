@@ -92,7 +92,7 @@ export function OrdersDataTable({
   onToggleSupplierPayment,
 }: {
   orders: any[]
-  onEdit: (order: any) => void
+  onEdit?: (order: any) => void
   onDelete?: (order: any) => void
   onToggleSupplierPayment?: (order: any, value: boolean) => void
 }) {
@@ -104,6 +104,7 @@ export function OrdersDataTable({
   const [scrolledX, setScrolledX] = useState(false)
   const [colWidths, setColWidths] = useState<number[]>([])
   const [tableWidth, setTableWidth] = useState(0)
+  const showActions = Boolean(onEdit || onDelete)
 
   const measure = () => {
     if (!theadRef.current || !scrollRef.current) return
@@ -286,23 +287,25 @@ export function OrdersDataTable({
           </th>
         )
       })}
-      <th
-        className={`${fixedWidths ? '' : 'min-w-[110px]'} px-4 py-3 text-center font-semibold sticky right-0 z-40`}
-        style={{
-          backgroundColor: '#f8f8f8',
-          color: '#012e64',
-          borderLeft: '2px solid #e5e5e5',
-          ...(fixedWidths && colWidths[displayFields.length]
-            ? {
-                width: colWidths[displayFields.length],
-                minWidth: colWidths[displayFields.length],
-                maxWidth: colWidths[displayFields.length],
-              }
-            : {}),
-        }}
-      >
-        Actions
-      </th>
+      {showActions && (
+        <th
+          className={`${fixedWidths ? '' : 'min-w-[110px]'} px-4 py-3 text-center font-semibold sticky right-0 z-40`}
+          style={{
+            backgroundColor: '#f8f8f8',
+            color: '#012e64',
+            borderLeft: '2px solid #e5e5e5',
+            ...(fixedWidths && colWidths[displayFields.length]
+              ? {
+                  width: colWidths[displayFields.length],
+                  minWidth: colWidths[displayFields.length],
+                  maxWidth: colWidths[displayFields.length],
+                }
+              : {}),
+          }}
+        >
+          Actions
+        </th>
+      )}
     </tr>
   )
 
@@ -351,21 +354,23 @@ export function OrdersDataTable({
           </th>
         )
       })}
-      <th
-        className="min-w-[110px] px-2 py-2 sticky right-0 z-40 text-center align-middle"
-        style={{ backgroundColor: '#f8f8f8', borderLeft: '2px solid #e5e5e5' }}
-      >
-        {activeFilterCount > 0 && (
-          <button
-            onClick={clearFilters}
-            title="Clear all filters"
-            className="inline-flex items-center justify-center h-7 w-7 rounded hover:bg-blue-100 transition-colors"
-            style={{ color: '#012e64' }}
-          >
-            <X className="w-4 h-4" />
-          </button>
-        )}
-      </th>
+      {showActions && (
+        <th
+          className="min-w-[110px] px-2 py-2 sticky right-0 z-40 text-center align-middle"
+          style={{ backgroundColor: '#f8f8f8', borderLeft: '2px solid #e5e5e5' }}
+        >
+          {activeFilterCount > 0 && (
+            <button
+              onClick={clearFilters}
+              title="Clear all filters"
+              className="inline-flex items-center justify-center h-7 w-7 rounded hover:bg-blue-100 transition-colors"
+              style={{ color: '#012e64' }}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </th>
+      )}
     </tr>
   )
 
@@ -465,37 +470,41 @@ export function OrdersDataTable({
                     </td>
                   )
                 })}
-                <td
-                  className="min-w-[110px] px-4 py-3 sticky right-0 z-10 text-center"
-                  style={{
-                    backgroundColor: rowBg,
-                    borderLeft: '2px solid #e5e5e5'
-                  }}
-                >
-                  <div className="flex items-center justify-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onEdit(order)}
-                      className="h-8 w-8 p-0 hover:bg-blue-100"
-                      style={{ color: '#012e64' }}
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </Button>
-                    {onDelete && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onDelete(order)}
-                        className="h-8 w-8 p-0 hover:bg-red-100"
-                        style={{ color: '#dc2626' }}
-                        title="Delete order"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
-                </td>
+                {showActions && (
+                  <td
+                    className="min-w-[110px] px-4 py-3 sticky right-0 z-10 text-center"
+                    style={{
+                      backgroundColor: rowBg,
+                      borderLeft: '2px solid #e5e5e5'
+                    }}
+                  >
+                    <div className="flex items-center justify-center gap-1">
+                      {onEdit && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onEdit(order)}
+                          className="h-8 w-8 p-0 hover:bg-blue-100"
+                          style={{ color: '#012e64' }}
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </Button>
+                      )}
+                      {onDelete && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onDelete(order)}
+                          className="h-8 w-8 p-0 hover:bg-red-100"
+                          style={{ color: '#dc2626' }}
+                          title="Delete order"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </td>
+                )}
               </tr>
               )
             })}

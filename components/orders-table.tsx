@@ -13,7 +13,17 @@ import { User } from "@/lib/db/schema"
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
 
-export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void }) {
+export function OrdersTable({
+  onOrdersChange,
+  apiPath = "/api/orders",
+  enableCreate = true,
+  enableActions = true,
+}: {
+  onOrdersChange?: () => void
+  apiPath?: string
+  enableCreate?: boolean
+  enableActions?: boolean
+}) {
   const [orders, setOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -49,7 +59,7 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
       
       if (searchTerm) params.append('search', searchTerm)
 
-      const response = await fetch(`/api/orders?${params.toString()}`)
+      const response = await fetch(`${apiPath}?${params.toString()}`)
       const result = await response.json()
 
       if (!response.ok) {
@@ -78,7 +88,7 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
 
   const handleCreateOrder = async (newOrder: any) => {
     try {
-      const response = await fetch('/api/orders', {
+      const response = await fetch(`${apiPath}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newOrder)
@@ -101,7 +111,7 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
 
   const handleUpdateOrder = async (updatedOrder: any) => {
     try {
-      const response = await fetch(`/api/orders/${updatedOrder.id}`, {
+      const response = await fetch(`${apiPath}/${updatedOrder.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedOrder)
@@ -155,7 +165,7 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
     setDeleteLoading(true)
     setError("")
     try {
-      const response = await fetch(`/api/orders/${deletingOrder.id}`, {
+      const response = await fetch(`${apiPath}/${deletingOrder.id}`, {
         method: 'DELETE',
       })
       const result = await response.json()
@@ -292,14 +302,16 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
             >
               <RefreshCw className="w-4 h-4" />
             </Button>
-            <Button 
-              onClick={() => setShowCreateDialog(true)} 
-              className="whitespace-nowrap text-white"
-              style={{ backgroundColor: '#012e64' }}
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              New Order
-            </Button>
+            {enableCreate && (
+              <Button 
+                onClick={() => setShowCreateDialog(true)} 
+                className="whitespace-nowrap text-white"
+                style={{ backgroundColor: '#012e64' }}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                New Order
+              </Button>
+            )}
           </div>
         </div>
 
@@ -349,7 +361,12 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
             </div>
           </div>
         ) : (
-          <OrdersDataTable orders={orders} onEdit={setEditingOrder} onDelete={canDelete ? setDeletingOrder : undefined} onToggleSupplierPayment={handleToggleSupplierPayment} />
+          <OrdersDataTable
+            orders={orders}
+            onEdit={enableActions ? setEditingOrder : undefined}
+            onDelete={enableActions && canDelete ? setDeletingOrder : undefined}
+            onToggleSupplierPayment={enableActions ? handleToggleSupplierPayment : undefined}
+          />
         )}
       </div>
 
@@ -357,7 +374,7 @@ export function OrdersTable({ onOrdersChange }: { onOrdersChange?: () => void })
       <PaginationControls />
 
       {/* Create Dialog */}
-      {showCreateDialog && (
+      {showCreateDialog && enableCreate && (
         <CreateOrderDialog onClose={() => setShowCreateDialog(false)} onCreate={handleCreateOrder} />
       )}
 
