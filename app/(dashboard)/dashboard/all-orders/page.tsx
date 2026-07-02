@@ -43,7 +43,7 @@ export default function AllOrdersPage() {
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-gray-900">All Orders</h1>
-        <p className="text-gray-500 mt-1">Browse the full all_orders table in read-only mode.</p>
+        <p className="text-gray-500 mt-1">Browse the full all_orders table in read-only mode for reporting and review.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -97,7 +97,7 @@ export default function AllOrdersPage() {
       </div>
 
       <div className="min-h-[500px]">
-        <OrdersTable apiPath="/api/all-orders" enableCreate={false} enableActions={false} />
+        <OrdersTable apiPath="/api/all-orders" enableCreate={false} enableActions={true} />
       </div>
     </div>
   )
