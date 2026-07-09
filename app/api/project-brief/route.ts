@@ -61,9 +61,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const baseUrl = process.env.BASE_URL;
-    if (!baseUrl) {
-      return NextResponse.json({ error: 'BASE_URL is not configured' }, { status: 500 });
+    // n8n requires an https:// callback it can reach. Prefer BASE_URL, but if
+    // it's missing or not https (e.g. localhost, or a stale env var on the
+    // host), fall back to the public origin of this very request.
+    let baseUrl = process.env.BASE_URL || '';
+    if (!baseUrl.startsWith('https://')) {
+      const host =
+        request.headers.get('x-forwarded-host') || request.headers.get('host');
+      const proto = request.headers.get('x-forwarded-proto') || 'https';
+      if (host && !host.includes('localhost') && proto === 'https') {
+        baseUrl = `https://${host}`;
+      }
+    }
+    if (!baseUrl.startsWith('https://')) {
+      return NextResponse.json(
+        {
+          error:
+            'Cannot build an https:// callback URL. Set BASE_URL to the public https URL of this app (the n8n workflow rejects non-https callbacks), or use an https tunnel when testing locally.'
+        },
+        { status: 500 }
+      );
     }
     const callbackUrl = `${baseUrl.replace(/\/$/, '')}/api/project-brief/callback`;
 
