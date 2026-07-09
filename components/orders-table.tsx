@@ -4,7 +4,14 @@ import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Plus, Search, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react"
+import { Plus, Search, RefreshCw, ChevronLeft, ChevronRight, Download, Loader2, CheckSquare } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { usePersistedTableState, fetchAllRows, downloadCsv } from "@/lib/table-utils"
 import { OrdersDataTable } from "@/components/orders-data-table"
 import { CreateOrderDialog } from "@/components/create-order-dialog"
 import { EditOrderDialog } from "@/components/edit-order-dialog"
@@ -27,7 +34,14 @@ export function OrdersTable({
   const [orders, setOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
-  const [searchTerm, setSearchTerm] = useState("")
+  const [exporting, setExporting] = useState(false)
+  // Row selection for export. Stores full row objects keyed by id so selections
+  // survive changing pages, search, or column filters.
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedRows, setSelectedRows] = useState<Map<any, any>>(new Map())
+  // Search/page persist per table (orders vs all-orders) and restore on return
+  const { searchTerm, setSearchTerm, currentPage, setCurrentPage, ready } =
+    usePersistedTableState(`table-state:${apiPath}`)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [editingOrder, setEditingOrder] = useState<any>(null)
   const [deletingOrder, setDeletingOrder] = useState<any>(null)
@@ -35,7 +49,6 @@ export function OrdersTable({
   const { data: user } = useSWR<User>("/api/user", fetcher)
   // Only owners and admins may delete orders (also enforced server-side).
   const canDelete = user?.role === "owner" || user?.role === "admin"
-  const [currentPage, setCurrentPage] = useState(1)
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 500,
@@ -43,10 +56,11 @@ export function OrdersTable({
     totalPages: 0
   })
 
-  // Fetch orders when page, search, or filter changes
+  // Fetch orders when page, search, or filter changes (once saved state is restored)
   useEffect(() => {
+    if (!ready) return
     fetchOrders(currentPage)
-  }, [currentPage, searchTerm])
+  }, [ready, currentPage, searchTerm])
 
   const fetchOrders = async (page = 1) => {
     setLoading(true)
@@ -76,15 +90,59 @@ export function OrdersTable({
     }
   }
 
-  // Reset to page 1 when the search term changes
-  useEffect(() => {
-    if (currentPage !== 1) {
-      setCurrentPage(1)
-    }
-  }, [searchTerm])
-
   // Handle search and filter
-  // Note: Search and filter are now handled on the backend across all data
+  // Note: Search and filter are now handled on the backend across all data.
+  // Changing the search resets to page 1 inside usePersistedTableState.
+
+  const handleExportCsv = async (scope: "filtered" | "all" | "selected") => {
+    setExporting(true)
+    setError("")
+    try {
+      const rows =
+        scope === "selected"
+          ? Array.from(selectedRows.values())
+          : await fetchAllRows(apiPath, scope === "filtered" ? searchTerm : undefined)
+      if (rows.length === 0) {
+        setError("Nothing to export")
+        return
+      }
+      const table = apiPath.split("/").pop() || "orders"
+      const suffix =
+        scope === "selected" ? "_selected" : scope === "filtered" && searchTerm ? "_filtered" : ""
+      downloadCsv(rows, `${table}${suffix}_${new Date().toISOString().slice(0, 10)}.csv`)
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const toggleSelectMode = () => {
+    setSelectMode((on) => {
+      if (on) setSelectedRows(new Map()) // leaving select mode clears the selection
+      return !on
+    })
+  }
+
+  const handleToggleRow = (order: any, checked: boolean) => {
+    setSelectedRows((prev) => {
+      const next = new Map(prev)
+      if (checked) next.set(order.id, order)
+      else next.delete(order.id)
+      return next
+    })
+  }
+
+  const handleToggleAll = (rows: any[], checked: boolean) => {
+    setSelectedRows((prev) => {
+      const next = new Map(prev)
+      for (const row of rows) {
+        if (checked) next.set(row.id, row)
+        else next.delete(row.id)
+      }
+      return next
+    })
+  }
 
   const handleCreateOrder = async (newOrder: any) => {
     try {
@@ -111,7 +169,7 @@ export function OrdersTable({
 
   const handleUpdateOrder = async (updatedOrder: any) => {
     try {
-      const response = await fetch(`${apiPath}/${updatedOrder.id}`, {
+      const response = await fetch(`/api/orders/${updatedOrder.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedOrder)
@@ -165,7 +223,7 @@ export function OrdersTable({
     setDeleteLoading(true)
     setError("")
     try {
-      const response = await fetch(`${apiPath}/${deletingOrder.id}`, {
+      const response = await fetch(`/api/orders/${deletingOrder.id}`, {
         method: 'DELETE',
       })
       const result = await response.json()
@@ -302,6 +360,56 @@ export function OrdersTable({
             >
               <RefreshCw className="w-4 h-4" />
             </Button>
+            <Button
+              onClick={toggleSelectMode}
+              variant="outline"
+              title={selectMode ? "Exit select mode (clears selection)" : "Select rows to export"}
+              className={selectMode ? "" : "hover:bg-gray-50"}
+              style={
+                selectMode
+                  ? { backgroundColor: '#012e64', borderColor: '#012e64', color: '#ffffff' }
+                  : { borderColor: '#8d9499', color: '#012e64' }
+              }
+            >
+              <CheckSquare className="w-4 h-4 mr-2" />
+              {selectMode
+                ? `Selecting${selectedRows.size > 0 ? ` (${selectedRows.size})` : ''}`
+                : 'Select'}
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  disabled={exporting}
+                  className="hover:bg-gray-50"
+                  style={{ borderColor: '#8d9499', color: '#012e64' }}
+                >
+                  {exporting ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4 mr-2" />
+                  )}
+                  Export CSV
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => handleExportCsv("selected")}
+                  disabled={selectedRows.size === 0}
+                >
+                  Selected rows{selectedRows.size > 0 ? ` (${selectedRows.size.toLocaleString()})` : ''}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => handleExportCsv("filtered")}
+                  disabled={!searchTerm}
+                >
+                  Filtered rows{searchTerm ? ` (${pagination.total.toLocaleString()})` : ''}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExportCsv("all")}>
+                  All rows
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             {enableCreate && (
               <Button 
                 onClick={() => setShowCreateDialog(true)} 
@@ -366,6 +474,10 @@ export function OrdersTable({
             onEdit={enableActions ? setEditingOrder : undefined}
             onDelete={enableActions && canDelete ? setDeletingOrder : undefined}
             onToggleSupplierPayment={enableActions ? handleToggleSupplierPayment : undefined}
+            selectable={selectMode}
+            selectedIds={new Set(selectedRows.keys())}
+            onToggleRow={handleToggleRow}
+            onToggleAll={handleToggleAll}
           />
         )}
       </div>

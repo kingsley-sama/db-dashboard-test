@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Users, Settings, Shield, Menu, ChevronLeft, ChevronRight, Package, FolderKanban, Layers } from 'lucide-react';
+import { Users, Settings, Shield, Menu, ChevronLeft, ChevronRight, Package, FolderKanban, Layers, Sparkles } from 'lucide-react';
 
 export function DashboardShell({
   children,
@@ -20,16 +20,17 @@ export function DashboardShell({
 
   const navItems = [
     { href: '/dashboard/orders', icon: Package, label: 'Orders' },
-    { href: '/dashboard/all-orders', icon: Layers, label: 'All Orders' },
     // Projects are visible to owners only
     ...(isOwner ? [{ href: '/dashboard/projects', icon: FolderKanban, label: 'Projects' }] : []),
+    { href: '/dashboard/ai-brief', icon: Sparkles, label: 'Project Brief' },
+    { href: '/dashboard/all-orders', icon: Layers, label: 'All Orders' },
     { href: '/dashboard', icon: Users, label: 'Team' },
     { href: '/dashboard/general', icon: Settings, label: 'General' },
     { href: '/dashboard/security', icon: Shield, label: 'Security' }
   ];
 
   return (
-    <div className="flex flex-col w-[85%] mx-auto">
+    <div className="flex flex-col w-[97%] mx-auto">
       {/* Mobile header */}
       <div className="lg:hidden flex items-center justify-between bg-white border-b border-gray-200 p-4">
         <div className="flex items-center">

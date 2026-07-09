@@ -90,11 +90,19 @@ export function OrdersDataTable({
   onEdit,
   onDelete,
   onToggleSupplierPayment,
+  selectable = false,
+  selectedIds,
+  onToggleRow,
+  onToggleAll,
 }: {
   orders: any[]
   onEdit?: (order: any) => void
   onDelete?: (order: any) => void
   onToggleSupplierPayment?: (order: any, value: boolean) => void
+  selectable?: boolean
+  selectedIds?: Set<any>
+  onToggleRow?: (order: any, checked: boolean) => void
+  onToggleAll?: (orders: any[], checked: boolean) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const theadRef = useRef<HTMLTableSectionElement>(null)
@@ -119,7 +127,7 @@ export function OrdersDataTable({
 
   useLayoutEffect(() => {
     measure()
-  }, [orders.length])
+  }, [orders.length, selectable])
 
   useEffect(() => {
     const container = scrollRef.current
@@ -259,6 +267,10 @@ export function OrdersDataTable({
     )
   }, [orders, columnFilters])
 
+  // Select-all applies to the rows visible under the current column filters
+  const allFilteredSelected =
+    filteredOrders.length > 0 && filteredOrders.every((o) => selectedIds?.has(o.id))
+
   const renderHeaderCells = (fixedWidths: boolean) => (
     <tr style={{ borderBottom: '2px solid #e5e5e5' }}>
       {displayFields.map((field, i) => {
@@ -283,7 +295,21 @@ export function OrdersDataTable({
                 : {}),
             }}
           >
-            {field.label}
+            {isFirst && selectable ? (
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  onChange={(e) => onToggleAll?.(filteredOrders, e.target.checked)}
+                  title="Select all rows on this page (matching filters)"
+                  className="h-4 w-4 cursor-pointer"
+                  style={{ accentColor: '#012e64' }}
+                />
+                <span>{field.label}</span>
+              </div>
+            ) : (
+              field.label
+            )}
           </th>
         )
       })}
@@ -432,6 +458,26 @@ export function OrdersDataTable({
               >
                 {displayFields.map((field, i) => {
                   const isFirst = i === 0
+                  const cellContent =
+                    field.key === "supplier_payment" ? (
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(order.supplier_payment)}
+                          onChange={(e) => onToggleSupplierPayment?.(order, e.target.checked)}
+                          className="h-4 w-4 cursor-pointer accent-green-600"
+                        />
+                        <span style={{ color: order.supplier_payment ? '#047857' : '#5d6b88', fontWeight: 500 }}>
+                          {order.supplier_payment ? "Yes" : "No"}
+                        </span>
+                      </label>
+                    ) : field.maxWidth ? (
+                      <div style={{ maxWidth: field.maxWidth, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {formatValue(order[field.key], field.key, order)}
+                      </div>
+                    ) : (
+                      formatValue(order[field.key], field.key, order)
+                    )
                   return (
                     <td
                       key={field.key}
@@ -450,23 +496,20 @@ export function OrdersDataTable({
                       }}
                       title={String(order[field.key] || '')}
                     >
-                      {field.key === "supplier_payment" ? (
-                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                      {isFirst && selectable ? (
+                        <div className="flex items-center gap-2">
                           <input
                             type="checkbox"
-                            checked={Boolean(order.supplier_payment)}
-                            onChange={(e) => onToggleSupplierPayment?.(order, e.target.checked)}
-                            className="h-4 w-4 cursor-pointer accent-green-600"
+                            checked={Boolean(selectedIds?.has(order.id))}
+                            onChange={(e) => onToggleRow?.(order, e.target.checked)}
+                            className="h-4 w-4 cursor-pointer shrink-0"
+                            style={{ accentColor: '#012e64' }}
                           />
-                          <span style={{ color: order.supplier_payment ? '#047857' : '#5d6b88', fontWeight: 500 }}>
-                            {order.supplier_payment ? "Yes" : "No"}
-                          </span>
-                        </label>
-                      ) : field.maxWidth ? (
-                        <div style={{ maxWidth: field.maxWidth, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {formatValue(order[field.key], field.key, order)}
+                          <div className="min-w-0">{cellContent}</div>
                         </div>
-                      ) : formatValue(order[field.key], field.key, order)}
+                      ) : (
+                        cellContent
+                      )}
                     </td>
                   )
                 })}

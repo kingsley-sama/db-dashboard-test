@@ -4,7 +4,14 @@ import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Plus, Search, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react"
+import { Plus, Search, RefreshCw, ChevronLeft, ChevronRight, Download, Loader2, CheckSquare } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { usePersistedTableState, fetchAllRows, downloadCsv } from "@/lib/table-utils"
 import { ProjectsDataTable } from "@/components/projects-data-table"
 import { CreateProjectDialog } from "@/components/create-project-dialog"
 import { EditProjectDialog } from "@/components/edit-project-dialog"
@@ -13,12 +20,18 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
   const [projects, setProjects] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
-  const [searchTerm, setSearchTerm] = useState("")
+  const [exporting, setExporting] = useState(false)
+  // Row selection for export. Stores full row objects keyed by id so selections
+  // survive changing pages, search, or column filters.
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedRows, setSelectedRows] = useState<Map<any, any>>(new Map())
+  // Search/page persist to localStorage and restore when returning to this page
+  const { searchTerm, setSearchTerm, currentPage, setCurrentPage, ready } =
+    usePersistedTableState("table-state:projects")
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [editingProject, setEditingProject] = useState<any>(null)
   const [deletingProject, setDeletingProject] = useState<any>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
-  const [currentPage, setCurrentPage] = useState(1)
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 500,
@@ -26,10 +39,11 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
     totalPages: 0
   })
 
-  // Fetch projects when page, search, or filter changes
+  // Fetch projects when page, search, or filter changes (once saved state is restored)
   useEffect(() => {
+    if (!ready) return
     fetchProjects(currentPage)
-  }, [currentPage, searchTerm])
+  }, [ready, currentPage, searchTerm])
 
   const fetchProjects = async (page = 1) => {
     setLoading(true)
@@ -59,12 +73,56 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
     }
   }
 
-  // Reset to page 1 when the search term changes
-  useEffect(() => {
-    if (currentPage !== 1) {
-      setCurrentPage(1)
+  // Changing the search resets to page 1 inside usePersistedTableState
+
+  const handleExportCsv = async (scope: "filtered" | "all" | "selected") => {
+    setExporting(true)
+    setError("")
+    try {
+      const rows =
+        scope === "selected"
+          ? Array.from(selectedRows.values())
+          : await fetchAllRows("/api/projects", scope === "filtered" ? searchTerm : undefined)
+      if (rows.length === 0) {
+        setError("Nothing to export")
+        return
+      }
+      const suffix =
+        scope === "selected" ? "_selected" : scope === "filtered" && searchTerm ? "_filtered" : ""
+      downloadCsv(rows, `projects${suffix}_${new Date().toISOString().slice(0, 10)}.csv`)
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setExporting(false)
     }
-  }, [searchTerm])
+  }
+
+  const toggleSelectMode = () => {
+    setSelectMode((on) => {
+      if (on) setSelectedRows(new Map()) // leaving select mode clears the selection
+      return !on
+    })
+  }
+
+  const handleToggleRow = (project: any, checked: boolean) => {
+    setSelectedRows((prev) => {
+      const next = new Map(prev)
+      if (checked) next.set(project.id, project)
+      else next.delete(project.id)
+      return next
+    })
+  }
+
+  const handleToggleAll = (rows: any[], checked: boolean) => {
+    setSelectedRows((prev) => {
+      const next = new Map(prev)
+      for (const row of rows) {
+        if (checked) next.set(row.id, row)
+        else next.delete(row.id)
+      }
+      return next
+    })
+  }
 
   const handleCreateProject = async (newProject: any) => {
     try {
@@ -255,6 +313,56 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
               <RefreshCw className="w-4 h-4" />
             </Button>
             <Button
+              onClick={toggleSelectMode}
+              variant="outline"
+              title={selectMode ? "Exit select mode (clears selection)" : "Select rows to export"}
+              className={selectMode ? "" : "hover:bg-gray-50"}
+              style={
+                selectMode
+                  ? { backgroundColor: '#012e64', borderColor: '#012e64', color: '#ffffff' }
+                  : { borderColor: '#8d9499', color: '#012e64' }
+              }
+            >
+              <CheckSquare className="w-4 h-4 mr-2" />
+              {selectMode
+                ? `Selecting${selectedRows.size > 0 ? ` (${selectedRows.size})` : ''}`
+                : 'Select'}
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  disabled={exporting}
+                  className="hover:bg-gray-50"
+                  style={{ borderColor: '#8d9499', color: '#012e64' }}
+                >
+                  {exporting ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4 mr-2" />
+                  )}
+                  Export CSV
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => handleExportCsv("selected")}
+                  disabled={selectedRows.size === 0}
+                >
+                  Selected rows{selectedRows.size > 0 ? ` (${selectedRows.size.toLocaleString()})` : ''}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => handleExportCsv("filtered")}
+                  disabled={!searchTerm}
+                >
+                  Filtered rows{searchTerm ? ` (${pagination.total.toLocaleString()})` : ''}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExportCsv("all")}>
+                  All rows
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button
               onClick={() => setShowCreateDialog(true)}
               className="whitespace-nowrap text-white"
               style={{ backgroundColor: '#012e64' }}
@@ -311,7 +419,15 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
             </div>
           </div>
         ) : (
-          <ProjectsDataTable projects={projects} onEdit={setEditingProject} onDelete={setDeletingProject} />
+          <ProjectsDataTable
+            projects={projects}
+            onEdit={setEditingProject}
+            onDelete={setDeletingProject}
+            selectable={selectMode}
+            selectedIds={new Set(selectedRows.keys())}
+            onToggleRow={handleToggleRow}
+            onToggleAll={handleToggleAll}
+          />
         )}
       </div>
 

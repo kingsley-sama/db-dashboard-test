@@ -10,6 +10,7 @@ import { ArrowLeft, ArrowRight, CircleIcon, Loader2, Upload, X } from 'lucide-re
 import { signIn, signUp } from '@/app/my-app/actions/dashboard_actions';
 import { ActionState } from '@/lib/auth/middleware';
 import Image from 'next/image';
+import { toast } from 'sonner';
 
 export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
   const searchParams = useSearchParams();
@@ -28,12 +29,16 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
     if (file) {
       // Validate file type
       if (!file.type.startsWith('image/')) {
-        alert('Please select an image file');
+        toast.error('That file type won\'t work', {
+          description: 'Please choose an image file (JPG, PNG, GIF or WebP) for your avatar.'
+        });
         return;
       }
       // Validate file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
-        alert('File size must be less than 5MB');
+        toast.error('Image is too large', {
+          description: `Your file is ${(file.size / (1024 * 1024)).toFixed(1)} MB — the maximum avatar size is 5 MB. Try a smaller or compressed image.`
+        });
         return;
       }
       setSelectedFile(file);

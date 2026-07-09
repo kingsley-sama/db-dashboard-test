@@ -97,7 +97,7 @@ export default function AllOrdersPage() {
       </div>
 
       <div className="min-h-[500px]">
-        <OrdersTable apiPath="/api/all-orders" enableCreate={false} enableActions={true} />
+        <OrdersTable apiPath="/api/all-orders" enableCreate={false} enableActions={false} />
       </div>
     </div>
   )

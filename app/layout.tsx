@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next';
 import { Manrope } from 'next/font/google';
 import { getUser, getTeamForUser } from '@/lib/db/queries';
 import { SWRConfig } from 'swr';
+import { Toaster } from '@/components/ui/sonner';
 
 const title = 'Supabase Dashboard Tool';
 const description =
@@ -65,6 +66,7 @@ export default function RootLayout({
         >
           {children}
         </SWRConfig>
+        <Toaster position="top-right" richColors />
       </body>
     </html>
   );

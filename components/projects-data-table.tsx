@@ -78,10 +78,18 @@ export function ProjectsDataTable({
   projects,
   onEdit,
   onDelete,
+  selectable = false,
+  selectedIds,
+  onToggleRow,
+  onToggleAll,
 }: {
   projects: any[]
   onEdit: (project: any) => void
   onDelete?: (project: any) => void
+  selectable?: boolean
+  selectedIds?: Set<any>
+  onToggleRow?: (project: any, checked: boolean) => void
+  onToggleAll?: (projects: any[], checked: boolean) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const theadRef = useRef<HTMLTableSectionElement>(null)
@@ -105,7 +113,7 @@ export function ProjectsDataTable({
 
   useLayoutEffect(() => {
     measure()
-  }, [projects.length])
+  }, [projects.length, selectable])
 
   useEffect(() => {
     const container = scrollRef.current
@@ -217,6 +225,10 @@ export function ProjectsDataTable({
     )
   }, [projects, columnFilters])
 
+  // Select-all applies to the rows visible under the current column filters
+  const allFilteredSelected =
+    filteredProjects.length > 0 && filteredProjects.every((p) => selectedIds?.has(p.id))
+
   const renderHeaderCells = (fixedWidths: boolean) => (
     <tr style={{ borderBottom: '2px solid #e5e5e5' }}>
       {displayFields.map((field, i) => {
@@ -241,7 +253,21 @@ export function ProjectsDataTable({
                 : {}),
             }}
           >
-            {field.label}
+            {isFirst && selectable ? (
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  onChange={(e) => onToggleAll?.(filteredProjects, e.target.checked)}
+                  title="Select all rows on this page (matching filters)"
+                  className="h-4 w-4 cursor-pointer"
+                  style={{ accentColor: '#012e64' }}
+                />
+                <span>{field.label}</span>
+              </div>
+            ) : (
+              field.label
+            )}
           </th>
         )
       })}
@@ -392,7 +418,24 @@ export function ProjectsDataTable({
                       }}
                       title={String(project[field.key] || '')}
                     >
-                      {field.maxWidth ? (
+                      {isFirst && selectable ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(selectedIds?.has(project.id))}
+                            onChange={(e) => onToggleRow?.(project, e.target.checked)}
+                            className="h-4 w-4 cursor-pointer shrink-0"
+                            style={{ accentColor: '#012e64' }}
+                          />
+                          <div className="min-w-0">
+                            {field.maxWidth ? (
+                              <div style={{ maxWidth: field.maxWidth, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {formatValue(project[field.key], field.key)}
+                              </div>
+                            ) : formatValue(project[field.key], field.key)}
+                          </div>
+                        </div>
+                      ) : field.maxWidth ? (
                         <div style={{ maxWidth: field.maxWidth, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {formatValue(project[field.key], field.key)}
                         </div>
