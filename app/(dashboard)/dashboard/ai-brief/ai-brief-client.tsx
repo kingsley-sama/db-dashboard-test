@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -83,8 +83,6 @@ export function AiBriefClient() {
 
   const [jobs, setJobs] = useState<BriefJob[]>([]);
   const [jobsLoaded, setJobsLoaded] = useState(false);
-  // Last-seen status per job, to detect completions and notify once
-  const prevStatuses = useRef<Map<string, string>>(new Map());
 
   const [viewedResult, setViewedResult] = useState<BriefResult | null>(null);
   const [loadingResultId, setLoadingResultId] = useState<string | null>(null);
@@ -112,30 +110,14 @@ export function AiBriefClient() {
     return () => clearTimeout(timer);
   }, [search, selected]);
 
-  const refreshJobs = async (notify: boolean) => {
+  // Completion toasts are handled globally by useBriefNotifications (mounted in
+  // the dashboard shell), so this list only keeps itself fresh.
+  const refreshJobs = async () => {
     try {
       const res = await fetch('/api/project-brief/jobs');
       const json = await res.json();
       if (!res.ok) return;
-      const list: BriefJob[] = json.data || [];
-
-      if (notify) {
-        for (const job of list) {
-          const prev = prevStatuses.current.get(job.job_id);
-          if (prev === 'processing' && job.status === 'success') {
-            toast.success(`Brief ready for ${job.project_id}`, {
-              description: 'Open it from the queue below.'
-            });
-          }
-          if (prev === 'processing' && job.status === 'error') {
-            toast.error(`Brief failed for ${job.project_id}`, {
-              description: job.error_code || 'Unknown error'
-            });
-          }
-        }
-      }
-      prevStatuses.current = new Map(list.map((j) => [j.job_id, j.status]));
-      setJobs(list);
+      setJobs(json.data || []);
       setJobsLoaded(true);
     } catch {
       // transient — next poll will retry
@@ -144,13 +126,13 @@ export function AiBriefClient() {
 
   // Load the queue on mount, then poll while any job is still processing
   useEffect(() => {
-    refreshJobs(false);
+    refreshJobs();
   }, []);
 
   const hasProcessing = jobs.some((j) => j.status === 'processing');
   useEffect(() => {
     if (!hasProcessing) return;
-    const interval = setInterval(() => refreshJobs(true), POLL_INTERVAL_MS);
+    const interval = setInterval(refreshJobs, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [hasProcessing]);
 
@@ -173,7 +155,7 @@ export function AiBriefClient() {
       });
       setSelected(null);
       setSearch('');
-      await refreshJobs(false);
+      await refreshJobs();
     } catch (err: any) {
       toast.error('Could not queue the brief', { description: err.message });
     } finally {

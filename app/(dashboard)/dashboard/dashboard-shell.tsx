@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Users, Settings, Shield, Menu, ChevronLeft, ChevronRight, Package, FolderKanban, Layers, Sparkles } from 'lucide-react';
+import { useBriefNotifications } from '@/lib/hooks/use-brief-notifications';
 
 export function DashboardShell({
   children,
@@ -17,6 +18,9 @@ export function DashboardShell({
   const pathname = usePathname();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(true);
+  // Toasts when a queued brief finishes (anywhere in the dashboard) and counts
+  // finished briefs the user hasn't opened yet
+  const unseenBriefs = useBriefNotifications();
 
   const navItems = [
     { href: '/dashboard/orders', icon: Package, label: 'Orders' },
@@ -85,8 +89,26 @@ export function DashboardShell({
                     } ${isCollapsed ? 'justify-center px-2' : 'justify-start'}`}
                     onClick={() => setIsSidebarOpen(false)}
                   >
-                    <item.icon className="h-4 w-4 flex-shrink-0" />
+                    <span className="relative flex-shrink-0">
+                      <item.icon className="h-4 w-4" />
+                      {/* Unread-briefs dot in collapsed mode */}
+                      {item.href === '/dashboard/ai-brief' && unseenBriefs > 0 && isCollapsed && (
+                        <span
+                          className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full border border-white"
+                          style={{ backgroundColor: '#f05d5e' }}
+                        />
+                      )}
+                    </span>
                     {!isCollapsed && <span>{item.label}</span>}
+                    {/* Unread-briefs count in expanded mode */}
+                    {item.href === '/dashboard/ai-brief' && unseenBriefs > 0 && !isCollapsed && (
+                      <span
+                        className="ml-auto inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full text-xs font-semibold text-white"
+                        style={{ backgroundColor: '#f05d5e' }}
+                      >
+                        {unseenBriefs}
+                      </span>
+                    )}
                   </Link>
                 );
 
