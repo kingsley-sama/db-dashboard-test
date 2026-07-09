@@ -9,8 +9,18 @@ const title = 'Supabase Dashboard Tool';
 const description =
   'A cleaner, more intuitive way to manage your Supabase databases — projects, orders, and delivery tracking in one place.';
 
+// A malformed BASE_URL (typo, missing protocol, stray whitespace in the host's
+// env settings) must not crash every page — new URL() throws on bad input.
+function safeMetadataBase(): URL | undefined {
+  try {
+    return process.env.BASE_URL ? new URL(process.env.BASE_URL.trim()) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export const metadata: Metadata = {
-  metadataBase: process.env.BASE_URL ? new URL(process.env.BASE_URL) : undefined,
+  metadataBase: safeMetadataBase(),
   title: {
     default: title,
     template: `%s · ${title}`,
