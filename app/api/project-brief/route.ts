@@ -110,18 +110,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { error: insertError } = await supabaseAdmin
+    // Upsert rather than insert: n8n owns job_id generation, and if it ever
+    // hands back an id we've already seen (e.g. a test workflow with a fixed
+    // UUID, or a retried trigger) we reset that row to processing instead of
+    // failing with a primary-key violation.
+    const { error: upsertError } = await supabaseAdmin
       .from('email_summary_jobs')
-      .insert([{
-        job_id: ack.job_id,
-        project_id,
-        status: 'processing',
-        requested_by: user.email,
-        callback_url: callbackUrl
-      }]);
+      .upsert(
+        {
+          job_id: ack.job_id,
+          project_id,
+          status: 'processing',
+          error_code: null,
+          result_payload: null,
+          requested_by: user.email,
+          callback_url: callbackUrl,
+          created_at: new Date().toISOString(),
+          completed_at: null
+        },
+        { onConflict: 'job_id' }
+      );
 
-    if (insertError) {
-      return NextResponse.json({ error: insertError.message }, { status: 500 });
+    if (upsertError) {
+      return NextResponse.json({ error: upsertError.message }, { status: 500 });
     }
 
     return NextResponse.json(
