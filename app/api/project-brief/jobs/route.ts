@@ -23,7 +23,27 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ data: data || [] }, { status: 200 });
+    // Flag which jobs actually have a stored result (a job can be marked
+    // success by the workflow while its callback was delivered elsewhere,
+    // e.g. early tests posting to webhook.site) — without shipping the
+    // heavy payloads themselves in this list.
+    const jobIds = (data || []).map((j) => j.job_id);
+    let withResult = new Set<string>();
+    if (jobIds.length > 0) {
+      const { data: resultRows } = await supabaseAdmin
+        .from('email_summary_jobs')
+        .select('job_id')
+        .in('job_id', jobIds)
+        .not('result_payload', 'is', null);
+      withResult = new Set((resultRows || []).map((r) => r.job_id));
+    }
+
+    const jobs = (data || []).map((j) => ({
+      ...j,
+      has_result: withResult.has(j.job_id)
+    }));
+
+    return NextResponse.json({ data: jobs }, { status: 200 });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

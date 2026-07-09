@@ -32,6 +32,7 @@ interface BriefJob {
   error_code: string | null;
   created_at: string;
   completed_at: string | null;
+  has_result: boolean;
 }
 
 interface BriefSummary {
@@ -69,10 +70,6 @@ const SUMMARY_SECTIONS: { key: keyof BriefSummary; title: string }[] = [
   { key: 'open_questions', title: 'Open Questions / Loose Ends' },
   { key: 'notable_moments', title: 'Notable Quotes or Moments' }
 ];
-
-// Base64 → UTF-8 string (atob alone mangles non-ASCII, e.g. German umlauts)
-const decodeBase64Utf8 = (b64: string) =>
-  new TextDecoder().decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
 
 export function AiBriefClient() {
   const [search, setSearch] = useState('');
@@ -169,7 +166,10 @@ export function AiBriefClient() {
       const res = await fetch(`/api/project-brief/${job.job_id}`);
       const json = await res.json();
       if (!res.ok || !json.data?.result_payload) {
-        toast.error('Could not load the brief result');
+        toast.error('No result stored for this brief', {
+          description:
+            'The workflow finished but its result was never delivered to this app (e.g. it was sent to a test callback URL). Queue a new brief for this project.'
+        });
         return;
       }
       setViewedResult(json.data.result_payload);
@@ -199,9 +199,6 @@ export function AiBriefClient() {
     viewedResult?.summary && typeof viewedResult.summary === 'string'
       ? viewedResult.summary
       : null;
-  const threadMarkdown = viewedResult?.raw_thread_file
-    ? decodeBase64Utf8(viewedResult.raw_thread_file.content)
-    : null;
 
   const statusBadge = (job: BriefJob) => {
     if (job.status === 'processing') {
@@ -332,7 +329,7 @@ export function AiBriefClient() {
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {statusBadge(job)}
-                  {job.status === 'success' && (
+                  {job.status === 'success' && job.has_result && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -347,6 +344,14 @@ export function AiBriefClient() {
                         </>
                       )}
                     </Button>
+                  )}
+                  {job.status === 'success' && !job.has_result && (
+                    <span
+                      className="text-xs text-gray-400"
+                      title="The workflow completed but its result was delivered to a different callback URL. Queue a new brief for this project."
+                    >
+                      No result stored
+                    </span>
                   )}
                 </div>
               </li>
@@ -402,19 +407,22 @@ export function AiBriefClient() {
             </Card>
           )}
 
-          {/* Raw email thread, shown on the interface as well as downloadable */}
-          {threadMarkdown && (
-            <Card className="p-0 overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
-                <FileText className="h-4 w-4 text-gray-400" />
-                <h3 className="text-sm font-semibold text-gray-900">
-                  Email thread — {viewedResult.raw_thread_file?.filename}
-                </h3>
-              </div>
-              <div className="max-h-[32rem] overflow-y-auto p-4">
-                <pre className="text-xs text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">
-                  {threadMarkdown}
-                </pre>
+          {/* The raw email thread is download-only — the UI shows the summary.
+              If no summary was delivered, point the user at the file. */}
+          {!summaryIsStructured && !summaryText && (
+            <Card className="p-6 flex items-start gap-3">
+              <FileText className="h-5 w-5 text-gray-400 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-gray-900">
+                  No summary was included with this brief
+                </p>
+                <p className="text-sm text-gray-500 mt-1">
+                  The full email thread is available via the download button above
+                  {viewedResult.raw_thread_file?.filename
+                    ? ` (${viewedResult.raw_thread_file.filename})`
+                    : ''}
+                  .
+                </p>
               </div>
             </Card>
           )}
