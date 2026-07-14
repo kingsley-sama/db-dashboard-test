@@ -49,6 +49,8 @@ export function OrdersTable({
   const { data: user } = useSWR<User>("/api/user", fetcher)
   // Only owners and admins may delete orders (also enforced server-side).
   const canDelete = user?.role === "owner" || user?.role === "admin"
+  // APMs have no access to the CSV export feature
+  const canExport = user?.role !== "apm"
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 500,
@@ -360,6 +362,8 @@ export function OrdersTable({
             >
               <RefreshCw className="w-4 h-4" />
             </Button>
+            {canExport && (
+            <>
             <Button
               onClick={toggleSelectMode}
               variant="outline"
@@ -410,6 +414,8 @@ export function OrdersTable({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            </>
+            )}
             {enableCreate && (
               <Button 
                 onClick={() => setShowCreateDialog(true)} 

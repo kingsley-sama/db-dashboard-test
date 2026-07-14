@@ -17,14 +17,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ data: [] }, { status: 200 });
     }
 
-    const { data, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from('projects')
       .select('project_id, project_name, project_manager, project_status')
       .or(
         `project_id.ilike.%${search}%,` +
         `project_name.ilike.%${search}%,` +
         `project_manager.ilike.%${search}%`
-      )
+      );
+
+    // APMs have no access to completed projects
+    if (user.role === 'apm') {
+      query = query.is('delivery_completion_date', null);
+    }
+
+    const { data, error } = await query
       .order('created_at', { ascending: false })
       .limit(8);
 
@@ -51,6 +58,21 @@ export async function POST(request: NextRequest) {
     const { project_id } = await request.json();
     if (!project_id || typeof project_id !== 'string') {
       return NextResponse.json({ error: 'project_id is required' }, { status: 400 });
+    }
+
+    // APMs have no access to completed projects, including their briefs
+    if (user.role === 'apm') {
+      const { data: project, error: projectError } = await supabaseAdmin
+        .from('projects')
+        .select('delivery_completion_date')
+        .eq('project_id', project_id)
+        .maybeSingle();
+      if (projectError) {
+        return NextResponse.json({ error: projectError.message }, { status: 500 });
+      }
+      if (project?.delivery_completion_date) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
     }
 
     const webhookUrl = process.env.N8N_PROJECT_BRIEF_WEBHOOK_URL;

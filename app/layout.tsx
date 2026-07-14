@@ -70,7 +70,11 @@ export default function RootLayout({
           value={{
             fallback: {
               '/api/user': getUser(),
-              '/api/team': getTeamForUser()
+              // APMs have no access to the Teams module, so don't embed the
+              // member list in the payload served to them.
+              '/api/team': getUser().then((u) =>
+                u?.role === 'apm' ? null : getTeamForUser()
+              )
             }
           }}
         >

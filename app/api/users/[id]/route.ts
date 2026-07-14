@@ -3,7 +3,7 @@ import { getCurrentUser } from '@/lib/my-app-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 
 // Must match the public.user_role enum in the database
-const USER_ROLES = ['owner', 'admin', 'pm'];
+const USER_ROLES = ['owner', 'admin', 'pm', 'apm'];
 
 // PATCH /api/users/[id] - Update a user's role (owner only)
 export async function PATCH(

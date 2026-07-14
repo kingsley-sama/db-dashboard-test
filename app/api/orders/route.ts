@@ -21,8 +21,19 @@ export async function GET(request: NextRequest) {
     const filterPM = searchParams.get('filterPM') || '';
     const filterPmType = searchParams.get('filterPmType') || '';
 
+    // APMs must not see orders belonging to completed projects: switch the
+    // projects join to an inner join and require no completion date. (This also
+    // hides orders with no matching project row from APMs.)
+    const isApm = user.role === 'apm';
+    const projectJoin = isApm
+      ? 'projects!inner(delivery_completion_date, project_name, client_contact_name, company_email)'
+      : 'projects(delivery_completion_date, project_name, client_contact_name, company_email)';
+
     // Build query with filters - join with projects for delivery_completion_date and project_name
-    let query = supabaseAdmin.from('orders').select('*, projects(delivery_completion_date, project_name, client_contact_name, company_email)', { count: 'exact' });
+    let query = supabaseAdmin.from('orders').select(`*, ${projectJoin}`, { count: 'exact' });
+    if (isApm) {
+      query = query.is('projects.delivery_completion_date', null);
+    }
 
     // Apply search filter across multiple fields
     if (search) {
@@ -60,7 +71,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch paginated data with filters - join with projects for delivery_completion_date and project_name
-    let dataQuery = supabaseAdmin.from('orders').select('*, projects(delivery_completion_date, project_name, client_contact_name, company_email)');
+    let dataQuery = supabaseAdmin.from('orders').select(`*, ${projectJoin}`);
+    if (isApm) {
+      dataQuery = dataQuery.is('projects.delivery_completion_date', null);
+    }
 
     // Apply same filters to data query
     if (search) {

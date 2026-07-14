@@ -17,6 +17,24 @@ export async function PUT(
     const body = await request.json();
     const { id } = await params;
 
+    // APMs have no access to orders belonging to completed projects
+    if (user.role === 'apm') {
+      const { data: existing, error: lookupError } = await supabaseAdmin
+        .from('orders')
+        .select('project_id, projects(delivery_completion_date)')
+        .eq('id', id)
+        .single();
+      if (lookupError) {
+        return NextResponse.json({ error: lookupError.message }, { status: 500 });
+      }
+      // Supabase types the embed as an array even for a to-one relation
+      const projectEmbed: any = existing?.projects;
+      const project = Array.isArray(projectEmbed) ? projectEmbed[0] : projectEmbed;
+      if (project?.delivery_completion_date) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
+    }
+
     // Separate project_id and project-only fields from order fields
     const { project_id, delivery_completion_date, ...orderFields } = body;
 

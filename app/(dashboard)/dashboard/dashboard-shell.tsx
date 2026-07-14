@@ -10,11 +10,13 @@ import { useBriefNotifications } from '@/lib/hooks/use-brief-notifications';
 
 export function DashboardShell({
   children,
-  isOwner = false
+  role = 'member'
 }: {
   children: React.ReactNode;
-  isOwner?: boolean;
+  role?: string;
 }) {
+  const isOwner = role === 'owner';
+  const isApm = role === 'apm';
   const pathname = usePathname();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(true);
@@ -27,10 +29,15 @@ export function DashboardShell({
     // Projects are visible to owners only
     ...(isOwner ? [{ href: '/dashboard/projects', icon: FolderKanban, label: 'Projects' }] : []),
     { href: '/dashboard/ai-brief', icon: Sparkles, label: 'Project Brief' },
-    { href: '/dashboard/all-orders', icon: Layers, label: 'All Orders' },
-    { href: '/dashboard', icon: Users, label: 'Team' },
+    // APMs only get Orders, Project Brief and General
+    ...(!isApm
+      ? [
+          { href: '/dashboard/all-orders', icon: Layers, label: 'All Orders' },
+          { href: '/dashboard', icon: Users, label: 'Team' }
+        ]
+      : []),
     { href: '/dashboard/general', icon: Settings, label: 'General' },
-    { href: '/dashboard/security', icon: Shield, label: 'Security' }
+    ...(!isApm ? [{ href: '/dashboard/security', icon: Shield, label: 'Security' }] : [])
   ];
 
   return (

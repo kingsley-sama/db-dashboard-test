@@ -9,6 +9,10 @@ export async function GET(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    // APMs have no access to the All Orders module
+    if (user.role === 'apm') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
     const searchParams = request.nextUrl.searchParams;
     const page = parseInt(searchParams.get('page') || '1');

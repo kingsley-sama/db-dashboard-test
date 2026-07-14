@@ -8,6 +8,10 @@ export default async function SecurityPage() {
   if (!user) {
     redirect('/sign-in');
   }
+  // APMs have no access to the Security module
+  if (user.role === 'apm') {
+    redirect('/dashboard/orders');
+  }
 
   return (
     <section className="flex-1 p-4 lg:p-8">

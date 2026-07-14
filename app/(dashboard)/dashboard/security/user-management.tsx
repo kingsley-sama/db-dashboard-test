@@ -34,7 +34,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2, Trash2 } from 'lucide-react';
 
 // Must match the public.user_role enum in the database
-const USER_ROLES = ['owner', 'admin', 'pm'] as const;
+const USER_ROLES = ['owner', 'admin', 'pm', 'apm'] as const;
 
 type ManagedUser = {
   id: number;

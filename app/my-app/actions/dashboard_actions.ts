@@ -326,6 +326,9 @@ const removeTeamMemberSchema = z.object({
 export const removeTeamMember = validatedActionWithUser(
   removeTeamMemberSchema,
   async (data, _, user) => {
+    if (user.role !== 'owner') {
+      return { error: 'Only team owners can remove members' };
+    }
     const { memberId } = data;
     const userWithTeam = await getUserWithTeam(user.id);
 
@@ -348,12 +351,15 @@ export const removeTeamMember = validatedActionWithUser(
 
 const inviteTeamMemberSchema = z.object({
   email: z.string().email('Invalid email address'),
-  role: z.enum(['member', 'owner'])
+  role: z.enum(['member', 'owner', 'apm'])
 });
 
 export const inviteTeamMember = validatedActionWithUser(
   inviteTeamMemberSchema,
   async (data, _, user) => {
+    if (user.role !== 'owner') {
+      return { error: 'Only team owners can invite members' };
+    }
     const { email, role } = data;
     const userWithTeam = await getUserWithTeam(user.id);
 

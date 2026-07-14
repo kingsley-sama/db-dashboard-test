@@ -17,5 +17,5 @@ export default async function DashboardLayout({
     redirect('/sign-in');
   }
 
-  return <DashboardShell isOwner={user.role === 'owner'}>{children}</DashboardShell>;
+  return <DashboardShell role={user.role}>{children}</DashboardShell>;
 }
