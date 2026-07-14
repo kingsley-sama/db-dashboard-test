@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
         `project_manager.ilike.%${search}%`
       );
 
-    // APMs have no access to completed projects
+    // APMs only see projects still in progress; other roles see everything
     if (user.role === 'apm') {
       query = query.is('delivery_completion_date', null);
     }

@@ -21,7 +21,7 @@ export async function PUT(
     if (user.role === 'apm') {
       const { data: existing, error: lookupError } = await supabaseAdmin
         .from('orders')
-        .select('project_id, projects(delivery_completion_date)')
+        .select('project_id, project_completion_date, projects(delivery_completion_date)')
         .eq('id', id)
         .single();
       if (lookupError) {
@@ -30,7 +30,8 @@ export async function PUT(
       // Supabase types the embed as an array even for a to-one relation
       const projectEmbed: any = existing?.projects;
       const project = Array.isArray(projectEmbed) ? projectEmbed[0] : projectEmbed;
-      if (project?.delivery_completion_date) {
+      // Ended if either the project's or the order's own end date is set
+      if (project?.delivery_completion_date || existing?.project_completion_date) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       }
     }

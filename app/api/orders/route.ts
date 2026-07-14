@@ -32,7 +32,12 @@ export async function GET(request: NextRequest) {
     // Build query with filters - join with projects for delivery_completion_date and project_name
     let query = supabaseAdmin.from('orders').select(`*, ${projectJoin}`, { count: 'exact' });
     if (isApm) {
-      query = query.is('projects.delivery_completion_date', null);
+      // The end date lives in two places that can disagree: the project's
+      // delivery_completion_date and the order's own project_completion_date.
+      // A project counts as ended if either is set.
+      query = query
+        .is('projects.delivery_completion_date', null)
+        .is('project_completion_date', null);
     }
 
     // Apply search filter across multiple fields
@@ -73,7 +78,9 @@ export async function GET(request: NextRequest) {
     // Fetch paginated data with filters - join with projects for delivery_completion_date and project_name
     let dataQuery = supabaseAdmin.from('orders').select(`*, ${projectJoin}`);
     if (isApm) {
-      dataQuery = dataQuery.is('projects.delivery_completion_date', null);
+      dataQuery = dataQuery
+        .is('projects.delivery_completion_date', null)
+        .is('project_completion_date', null);
     }
 
     // Apply same filters to data query
