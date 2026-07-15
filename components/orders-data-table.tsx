@@ -94,6 +94,7 @@ export function OrdersDataTable({
   selectedIds,
   onToggleRow,
   onToggleAll,
+  hiddenColumns,
 }: {
   orders: any[]
   onEdit?: (order: any) => void
@@ -103,7 +104,15 @@ export function OrdersDataTable({
   selectedIds?: Set<any>
   onToggleRow?: (order: any, checked: boolean) => void
   onToggleAll?: (orders: any[], checked: boolean) => void
+  hiddenColumns?: string[]
 }) {
+  const visibleFields = useMemo(
+    () =>
+      hiddenColumns?.length
+        ? displayFields.filter((f) => !hiddenColumns.includes(f.key))
+        : displayFields,
+    [hiddenColumns]
+  )
   const scrollRef = useRef<HTMLDivElement>(null)
   const theadRef = useRef<HTMLTableSectionElement>(null)
   const floatingOuterRef = useRef<HTMLDivElement>(null)
@@ -127,7 +136,7 @@ export function OrdersDataTable({
 
   useLayoutEffect(() => {
     measure()
-  }, [orders.length, selectable])
+  }, [orders.length, selectable, visibleFields.length])
 
   useEffect(() => {
     const container = scrollRef.current
@@ -233,7 +242,7 @@ export function OrdersDataTable({
   // Distinct values for dropdown columns, derived from the loaded rows.
   const filterOptions = useMemo(() => {
     const map: Record<string, string[]> = {}
-    for (const field of displayFields) {
+    for (const field of visibleFields) {
       if (!selectColumns.has(field.key)) continue
       const set = new Set<string>()
       for (const order of orders) {
@@ -273,7 +282,7 @@ export function OrdersDataTable({
 
   const renderHeaderCells = (fixedWidths: boolean) => (
     <tr style={{ borderBottom: '2px solid #e5e5e5' }}>
-      {displayFields.map((field, i) => {
+      {visibleFields.map((field, i) => {
         const isFirst = i === 0
         return (
           <th
@@ -320,11 +329,11 @@ export function OrdersDataTable({
             backgroundColor: '#f8f8f8',
             color: '#012e64',
             borderLeft: '2px solid #e5e5e5',
-            ...(fixedWidths && colWidths[displayFields.length]
+            ...(fixedWidths && colWidths[visibleFields.length]
               ? {
-                  width: colWidths[displayFields.length],
-                  minWidth: colWidths[displayFields.length],
-                  maxWidth: colWidths[displayFields.length],
+                  width: colWidths[visibleFields.length],
+                  minWidth: colWidths[visibleFields.length],
+                  maxWidth: colWidths[visibleFields.length],
                 }
               : {}),
           }}
@@ -337,7 +346,7 @@ export function OrdersDataTable({
 
   const renderFilterRow = () => (
     <tr style={{ borderBottom: '2px solid #e5e5e5' }}>
-      {displayFields.map((field, i) => {
+      {visibleFields.map((field, i) => {
         const isFirst = i === 0
         const filter = getFilter(field.key)
         return (
@@ -456,7 +465,7 @@ export function OrdersDataTable({
                   backgroundColor: rowBg
                 }}
               >
-                {displayFields.map((field, i) => {
+                {visibleFields.map((field, i) => {
                   const isFirst = i === 0
                   const cellContent =
                     field.key === "supplier_payment" ? (

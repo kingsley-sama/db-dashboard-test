@@ -51,6 +51,8 @@ export function OrdersTable({
   const canDelete = user?.role === "owner" || user?.role === "admin"
   // APMs have no access to the CSV export feature
   const canExport = user?.role !== "apm"
+  // APMs don't see the Net Sum column
+  const hiddenColumns = user?.role === "apm" ? ["net_sum"] : undefined
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 500,
@@ -484,6 +486,7 @@ export function OrdersTable({
             selectedIds={new Set(selectedRows.keys())}
             onToggleRow={handleToggleRow}
             onToggleAll={handleToggleAll}
+            hiddenColumns={hiddenColumns}
           />
         )}
       </div>
