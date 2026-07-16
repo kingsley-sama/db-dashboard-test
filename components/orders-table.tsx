@@ -51,8 +51,8 @@ export function OrdersTable({
   const canDelete = user?.role === "owner" || user?.role === "admin"
   // APMs have no access to the CSV export feature
   const canExport = user?.role !== "apm"
-  // APMs don't see the Net Sum column
-  const hiddenColumns = user?.role === "apm" ? ["net_sum"] : undefined
+  // APMs don't see the Net Sum or Profit Margin columns
+  const hiddenColumns = user?.role === "apm" ? ["net_sum", "profit_margin"] : undefined
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 500,
