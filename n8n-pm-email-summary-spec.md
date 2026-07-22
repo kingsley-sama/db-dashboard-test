@@ -457,7 +457,14 @@ Recommended even though not explicitly requested — without this, a failed job 
 | `completed_at` | timestamptz, nullable | |
 
 Write a `processing` row right after job_id generation, and update it to `success`/`error`
-at the end. This also gives you a natural audit trail of who requested context on which
+at the end. **This write must be an upsert on `job_id`, not a plain insert** — a re-run that
+reuses a job_id (n8n test executions with pinned data, a retried trigger, or the dashboard
+having already upserted its own row for the same job) must reset the existing row back to
+`processing` instead of failing with a `email_summary_jobs_pkey` duplicate-key violation.
+Via PostgREST/Supabase HTTP: `POST /rest/v1/email_summary_jobs?on_conflict=job_id` with header
+`Prefer: resolution=merge-duplicates`; via a Postgres node:
+`INSERT ... ON CONFLICT (job_id) DO UPDATE SET status='processing', error_code=null,
+result_payload=null, completed_at=null`. This also gives you a natural audit trail of who requested context on which
 project and when — useful in its own right for this company's use case.
 
 ---
@@ -494,7 +501,9 @@ project and when — useful in its own right for this company's use case.
    `callback_url`, `requested_by`. Do not wait for completion if avoidable, or accept the
    slight delay if the n8n setup requires waiting — either way Workflow A has already
    responded to the original caller.
-6. *(Workflow B starts here)* **Supabase node** — fetch project by `project_id`.
+6. *(Workflow B starts here)* **Supabase/HTTP node** — upsert the `processing` row into
+   `email_summary_jobs` (`on_conflict=job_id`, `Prefer: resolution=merge-duplicates` — never a
+   plain insert, see §11), then **Supabase node** — fetch project by `project_id`.
 7. **IF node** — not found → build error payload → HTTP Request (callback) → stop.
 8. **Supabase node** — fetch PM mailbox token row by `project_manager`.
 9. **IF/Code node** — check token expiry; **HTTP Request node** — refresh token via Microsoft
