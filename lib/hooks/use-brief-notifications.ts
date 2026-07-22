@@ -54,7 +54,8 @@ export function useBriefNotifications() {
         for (const job of jobs) {
           if (job.status === 'processing' || notified.has(job.job_id)) continue;
           const completedAt = job.completed_at ? new Date(job.completed_at).getTime() : 0;
-          if (Date.now() - completedAt < TOAST_WINDOW_MS) {
+          // Stopped by the user — nothing to announce, just mark it notified.
+          if (Date.now() - completedAt < TOAST_WINDOW_MS && job.status !== 'stopped') {
             if (job.status === 'success') {
               toast.success('Your project brief is ready', {
                 description: `Project ${job.project_id} has been analyzed — open it on the Project Brief page.`,

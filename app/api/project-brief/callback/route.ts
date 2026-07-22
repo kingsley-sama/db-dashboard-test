@@ -24,6 +24,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // A user can stop a brief while n8n is still working on it; when that
+    // workflow eventually calls back, discard the result instead of
+    // resurrecting the job.
+    const { data: existing } = await supabaseAdmin
+      .from('email_summary_jobs')
+      .select('status')
+      .eq('job_id', job_id)
+      .maybeSingle();
+    if (existing?.status === 'stopped') {
+      return NextResponse.json({ received: true, discarded: true }, { status: 200 });
+    }
+
     // Upsert so a callback still lands even if the trigger-side insert failed.
     // project_id and callback_url are NOT NULL in the table, so provide
     // fallbacks for that insert path (callback_url = this endpoint itself).

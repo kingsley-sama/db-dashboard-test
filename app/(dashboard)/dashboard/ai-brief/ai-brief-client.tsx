@@ -13,11 +13,31 @@ import {
   Loader2,
   AlertCircle,
   CheckCircle2,
+  CircleStop,
   Copy,
   History,
+  MoreHorizontal,
+  SquarePen,
+  Trash2,
   User,
   X
 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog';
 
 interface ProjectHit {
   project_id: string;
@@ -29,7 +49,7 @@ interface ProjectHit {
 interface BriefJob {
   job_id: string;
   project_id: string | null;
-  status: 'processing' | 'success' | 'error';
+  status: 'processing' | 'success' | 'error' | 'stopped';
   error_code: string | null;
   created_at: string;
   completed_at: string | null;
@@ -89,6 +109,9 @@ export function AiBriefClient() {
   const [activeLabel, setActiveLabel] = useState<string | null>(null);
   const [viewedResult, setViewedResult] = useState<BriefResult | null>(null);
   const [loadingResultId, setLoadingResultId] = useState<string | null>(null);
+  const [stoppingId, setStoppingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<BriefJob | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const autoLoadedRef = useRef<Set<string>>(new Set());
 
   // Debounced project search
@@ -216,6 +239,64 @@ export function AiBriefClient() {
     }
   };
 
+  const startNewBrief = () => {
+    setActiveJobId(null);
+    setActiveLabel(null);
+    setViewedResult(null);
+    setSelected(null);
+    setSearch('');
+    setHistoryOpen(false);
+  };
+
+  const stopJob = async (job: BriefJob) => {
+    setStoppingId(job.job_id);
+    try {
+      const res = await fetch(`/api/project-brief/${job.job_id}`, {
+        method: 'PATCH'
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error('Could not stop the brief', { description: json.error });
+        return;
+      }
+      setJobs((prev) =>
+        prev.map((j) =>
+          j.job_id === job.job_id ? { ...j, status: 'stopped' as const } : j
+        )
+      );
+      await refreshJobs();
+    } catch (err: any) {
+      toast.error('Could not stop the brief', { description: err.message });
+    } finally {
+      setStoppingId(null);
+    }
+  };
+
+  const deleteJob = async (job: BriefJob) => {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/project-brief/${job.job_id}`, {
+        method: 'DELETE'
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error('Could not delete the brief', { description: json.error });
+        return;
+      }
+      setJobs((prev) => prev.filter((j) => j.job_id !== job.job_id));
+      if (activeJobId === job.job_id) {
+        setActiveJobId(null);
+        setActiveLabel(null);
+        setViewedResult(null);
+      }
+    } catch (err: any) {
+      toast.error('Could not delete the brief', { description: err.message });
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
+    }
+  };
+
   const downloadThreadFile = (result: BriefResult) => {
     const file = result.raw_thread_file;
     if (!file) return;
@@ -264,6 +345,8 @@ export function AiBriefClient() {
       return <Loader2 className="h-4 w-4 animate-spin text-gray-400" />;
     if (job.status === 'success')
       return <CheckCircle2 className="h-4 w-4 text-emerald-600" />;
+    if (job.status === 'stopped')
+      return <CircleStop className="h-4 w-4 text-gray-400" />;
     return <AlertCircle className="h-4 w-4 text-red-500" />;
   };
 
@@ -368,11 +451,36 @@ export function AiBriefClient() {
                   {/* Still processing */}
                   {activeJob?.status === 'processing' && !viewedResult && (
                     <div className="flex items-center gap-3 py-2">
-                      <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
-                      <p className="text-sm text-gray-500">
+                      <Loader2 className="h-4 w-4 animate-spin text-gray-400 shrink-0" />
+                      <p className="text-sm text-gray-500 flex-1">
                         Reading the email history and writing the brief… this can
                         take a few minutes. You can keep working — it'll appear
                         here when it's done.
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0 text-gray-600 rounded-full"
+                        disabled={stoppingId === activeJob.job_id}
+                        onClick={() => stopJob(activeJob)}
+                      >
+                        {stoppingId === activeJob.job_id ? (
+                          <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                        ) : (
+                          <CircleStop className="h-4 w-4 mr-1.5" />
+                        )}
+                        Stop
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Stopped by the user */}
+                  {activeJob?.status === 'stopped' && !viewedResult && (
+                    <div className="flex items-center gap-3 py-2">
+                      <CircleStop className="h-4 w-4 text-gray-400 shrink-0" />
+                      <p className="text-sm text-gray-500">
+                        This brief was stopped. Queue a new one for this project
+                        if you still need it.
                       </p>
                     </div>
                   )}
@@ -611,64 +719,136 @@ export function AiBriefClient() {
         </div>
       </div>
 
-      {/* ── History side panel (docked) ─────────────────────────────── */}
+      {/* ── History side panel (docked right, ChatGPT-style) ────────── */}
       <aside
         className={`${
           historyOpen ? 'flex' : 'hidden'
-        } lg:flex w-72 shrink-0 border-l border-gray-100 bg-gray-50/60 flex-col`}
+        } lg:flex w-72 shrink-0 border-l border-gray-200/70 bg-[#f9f9f9] flex-col`}
       >
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Previous briefs
-          </h2>
+        <div className="px-3 pt-3 pb-2 flex items-center justify-between">
           <button
-            className="lg:hidden text-gray-400 hover:text-gray-600"
+            onClick={startNewBrief}
+            className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200/60 transition-colors"
+          >
+            <SquarePen className="h-4 w-4" /> New brief
+          </button>
+          <button
+            className="lg:hidden text-gray-400 hover:text-gray-600 p-1.5"
             onClick={() => setHistoryOpen(false)}
             aria-label="Close history"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+        <div className="px-5 pt-2 pb-1">
+          <h2 className="text-xs font-medium text-gray-400">Briefs</h2>
+        </div>
+        <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5">
           {!jobsLoaded ? (
-            <div className="flex items-center gap-2 text-sm text-gray-400 px-1 py-2">
+            <div className="flex items-center gap-2 text-sm text-gray-400 px-3 py-2">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading…
             </div>
           ) : jobs.length === 0 ? (
-            <p className="text-sm text-gray-400 px-1 py-2">
+            <p className="text-sm text-gray-400 px-3 py-2">
               No briefs yet. Search a project below to generate your first one.
             </p>
           ) : (
             jobs.map((job) => (
-              <button
-                key={job.job_id}
-                onClick={() => openJob(job)}
-                className={`w-full text-left rounded-xl border bg-white px-3.5 py-3 shadow-sm transition-colors hover:border-gray-300 ${
-                  activeJobId === job.job_id
-                    ? 'border-gray-400 ring-1 ring-gray-200'
-                    : 'border-gray-200'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-gray-900 truncate">
+              <div key={job.job_id} className="group relative">
+                <button
+                  onClick={() => openJob(job)}
+                  className={`w-full text-left rounded-lg pl-3 pr-9 py-2 transition-colors ${
+                    activeJobId === job.job_id
+                      ? 'bg-gray-200/80'
+                      : 'hover:bg-gray-200/50'
+                  }`}
+                >
+                  <span className="block text-sm text-gray-900 truncate">
                     {job.project_id}
-                  </p>
-                  <span className="shrink-0">{jobStatusDot(job)}</span>
-                </div>
-                <p className="text-xs text-gray-400 mt-0.5 truncate">
-                  {job.status === 'processing'
-                    ? 'Processing…'
-                    : job.status === 'error'
-                      ? job.error_code || 'Failed'
-                      : !job.has_result
-                        ? 'No result stored'
-                        : `Requested ${new Date(job.created_at).toLocaleString()}`}
-                </p>
-              </button>
+                  </span>
+                  <span className="block text-xs text-gray-400 truncate mt-0.5">
+                    {job.status === 'processing'
+                      ? 'Processing…'
+                      : job.status === 'stopped'
+                        ? 'Stopped'
+                        : job.status === 'error'
+                          ? job.error_code || 'Failed'
+                          : !job.has_result
+                            ? 'No result stored'
+                            : new Date(job.created_at).toLocaleString()}
+                  </span>
+                </button>
+
+                {/* Status icon, swapped for the ⋯ menu on hover */}
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none group-hover:opacity-0 group-focus-within:opacity-0 transition-opacity">
+                  {jobStatusDot(job)}
+                </span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 w-7 rounded-md flex items-center justify-center text-gray-500 hover:text-gray-800 hover:bg-gray-300/50 opacity-0 group-hover:opacity-100 focus:opacity-100 data-[state=open]:opacity-100 transition-opacity"
+                      aria-label={`Options for ${job.project_id}`}
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-40 rounded-xl">
+                    {job.status === 'processing' && (
+                      <DropdownMenuItem
+                        disabled={stoppingId === job.job_id}
+                        onClick={() => stopJob(job)}
+                      >
+                        <CircleStop className="h-4 w-4 mr-2" /> Stop
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
+                      className="text-red-600 focus:text-red-600"
+                      onClick={() => setDeleteTarget(job)}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" /> Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             ))
           )}
         </div>
       </aside>
+
+      {/* Delete confirmation */}
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete brief?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove the brief for{' '}
+              <span className="font-semibold text-gray-700">
+                {deleteTarget?.project_id}
+              </span>{' '}
+              from your history.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={(e) => {
+                e.preventDefault();
+                if (deleteTarget) deleteJob(deleteTarget);
+              }}
+            >
+              {deleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

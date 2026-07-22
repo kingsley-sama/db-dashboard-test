@@ -17,7 +17,7 @@ declare global {
 export const client =
   global.__pgClient ??
   postgres(process.env.POSTGRES_URL, {
-    max: 10,
+    max: 1,
     idle_timeout: 20,
     connect_timeout: 10,
     prepare: false,

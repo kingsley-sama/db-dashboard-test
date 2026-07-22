@@ -6,7 +6,7 @@
 create table if not exists public.email_summary_jobs (
   job_id uuid primary key,
   project_id text not null,
-  status text not null, -- processing / success / error
+  status text not null, -- processing / success / error / stopped
   error_code text,
   requested_by text,
   callback_url text not null,
