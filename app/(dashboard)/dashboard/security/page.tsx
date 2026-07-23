@@ -8,10 +8,9 @@ export default async function SecurityPage() {
   if (!user) {
     redirect('/sign-in');
   }
-  // APMs have no access to the Security module
-  if (user.role === 'apm') {
-    redirect('/dashboard/orders');
-  }
+  // APMs get a limited Security page: password changes only, no user
+  // management or account deletion.
+  const isApm = user.role === 'apm';
 
   return (
     <section className="flex-1 p-4 lg:p-8">
@@ -19,7 +18,7 @@ export default async function SecurityPage() {
         Security Settings
       </h1>
       {user.role === 'owner' && <UserManagement currentUserId={user.id} />}
-      <SecuritySettings />
+      <SecuritySettings passwordOnly={isApm} />
     </section>
   );
 }

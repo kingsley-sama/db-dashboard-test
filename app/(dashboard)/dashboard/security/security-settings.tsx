@@ -84,7 +84,11 @@ function PasswordInput({
   );
 }
 
-export function SecuritySettings() {
+export function SecuritySettings({
+  passwordOnly = false
+}: {
+  passwordOnly?: boolean;
+} = {}) {
   const [passwordState, passwordAction, isPasswordPending] = useActionState<
     PasswordState,
     FormData
@@ -213,6 +217,7 @@ export function SecuritySettings() {
         </CardContent>
       </Card>
 
+      {!passwordOnly && (
       <Card>
         <CardHeader>
           <CardTitle>Delete Account</CardTitle>
@@ -252,6 +257,7 @@ export function SecuritySettings() {
           </form>
         </CardContent>
       </Card>
+      )}
     </>
   );
 }

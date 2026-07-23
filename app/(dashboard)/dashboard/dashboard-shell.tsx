@@ -37,7 +37,8 @@ export function DashboardShell({
         ]
       : []),
     { href: '/dashboard/general', icon: Settings, label: 'General' },
-    ...(!isApm ? [{ href: '/dashboard/security', icon: Shield, label: 'Security' }] : [])
+    // APMs get Security too, but only for changing their password
+    { href: '/dashboard/security', icon: Shield, label: 'Security' }
   ];
 
   return (
