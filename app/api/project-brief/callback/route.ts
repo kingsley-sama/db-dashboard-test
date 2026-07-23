@@ -14,7 +14,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const payload = await request.json();
+    // n8n can deliver the payload wrapped in a one-element items array —
+    // unwrap it so job_id/status/summary are found at the top level.
+    const body = await request.json();
+    const payload = Array.isArray(body) ? body[0] ?? {} : body;
     const { job_id, project_id, status } = payload;
 
     if (!job_id || !status) {

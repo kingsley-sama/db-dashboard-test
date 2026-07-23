@@ -95,6 +95,32 @@ const SUMMARY_SECTIONS: { key: keyof BriefSummary; title: string }[] = [
   { key: 'notable_moments', title: 'Notable Quotes or Moments' }
 ];
 
+// n8n sometimes delivers the result (or the summary inside it) wrapped in a
+// one-element items array — e.g. [{ summary: {...} }] — or as a JSON string.
+// Normalize every stored shape to a flat BriefResult so historical briefs
+// render instead of falling through to "no summary was included".
+const normalizeResult = (raw: any, job: BriefJob): BriefResult => {
+  const result = (Array.isArray(raw) ? raw[0] : raw) ?? {};
+  let summary = result.summary;
+  if (Array.isArray(summary)) summary = summary[0];
+  if (summary && typeof summary === 'object' && 'summary' in summary) {
+    summary = summary.summary;
+  }
+  if (typeof summary === 'string' && /^\s*[[{]/.test(summary)) {
+    try {
+      summary = normalizeResult([{ summary: JSON.parse(summary) }], job).summary;
+    } catch {
+      // plain-text summary that happens to start with a bracket — keep as is
+    }
+  }
+  return {
+    ...result,
+    summary,
+    job_id: result.job_id ?? job.job_id,
+    project_id: result.project_id ?? job.project_id ?? ''
+  };
+};
+
 export function AiBriefClient() {
   const [search, setSearch] = useState('');
   const [hits, setHits] = useState<ProjectHit[]>([]);
@@ -179,7 +205,7 @@ export function AiBriefClient() {
         });
         return;
       }
-      setViewedResult(json.data.result_payload);
+      setViewedResult(normalizeResult(json.data.result_payload, job));
     } catch (err: any) {
       toast.error('Could not load the brief result', { description: err.message });
     } finally {
