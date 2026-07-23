@@ -101,7 +101,9 @@ const SUMMARY_SECTIONS: { key: keyof BriefSummary; title: string }[] = [
 // render instead of falling through to "no summary was included".
 const normalizeResult = (raw: any, job: BriefJob): BriefResult => {
   const result = (Array.isArray(raw) ? raw[0] : raw) ?? {};
-  let summary = result.summary;
+  // Some workflow versions nest the summary inside raw_thread_file instead of
+  // at the top level — fall back to it so those briefs still render.
+  let summary = result.summary ?? result.raw_thread_file?.summary;
   if (Array.isArray(summary)) summary = summary[0];
   if (summary && typeof summary === 'object' && 'summary' in summary) {
     summary = summary.summary;
