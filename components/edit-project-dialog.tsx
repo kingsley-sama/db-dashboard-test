@@ -200,7 +200,6 @@ export function EditProjectDialog({
       partial_invoice: formData.partial_invoice || null,
       partial_invoice_paid_date: formData.partial_invoice_paid_date || null,
       delivery_completion_date: formData.delivery_completion_date || null,
-      project_completion_date: formData.project_completion_date || null,
       path_to_files: formData.path_to_files || null,
     }
     // If the email link changed, re-derive the company email / contact from it.
@@ -446,14 +445,17 @@ export function EditProjectDialog({
               </div>
               <div>
                 <label className="text-sm font-medium" style={{ color: '#012e64' }}>Date Project End</label>
+                {/* Order-level field: shown here as the latest end date across the
+                    project's orders; edited per order in the Edit Order modal. */}
                 <Input
                   name="project_completion_date"
                   type="date"
                   value={dateValue(formData.project_completion_date)}
-                  onChange={handleChange}
-                  className="bg-white"
+                  disabled
+                  className="bg-gray-50"
                   style={{ borderColor: '#8d9499', color: '#012e64' }}
                 />
+                <p className="text-xs mt-1" style={{ color: '#5d6b88' }}>Set per order in the Orders page</p>
               </div>
             </div>
 

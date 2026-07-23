@@ -17,6 +17,8 @@ import {
   Copy,
   History,
   MoreHorizontal,
+  PanelRightClose,
+  PanelRightOpen,
   SquarePen,
   Trash2,
   User,
@@ -103,6 +105,8 @@ export function AiBriefClient() {
   const [jobs, setJobs] = useState<BriefJob[]>([]);
   const [jobsLoaded, setJobsLoaded] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Desktop-only: collapses the docked panel entirely (mobile uses historyOpen)
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
 
   // The brief currently shown in the conversation pane
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
@@ -374,14 +378,27 @@ export function AiBriefClient() {
               </p>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="lg:hidden text-gray-500"
-            onClick={() => setHistoryOpen((open) => !open)}
-          >
-            <History className="h-4 w-4 mr-1.5" /> History
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="lg:hidden text-gray-500"
+              onClick={() => setHistoryOpen((open) => !open)}
+            >
+              <History className="h-4 w-4 mr-1.5" /> History
+            </Button>
+            {panelCollapsed && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="hidden lg:inline-flex text-gray-500"
+                onClick={() => setPanelCollapsed(false)}
+                aria-label="Open briefs panel"
+              >
+                <PanelRightOpen className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Scrolling chat area */}
@@ -721,9 +738,9 @@ export function AiBriefClient() {
 
       {/* ── History side panel (docked right, ChatGPT-style) ────────── */}
       <aside
-        className={`${
-          historyOpen ? 'flex' : 'hidden'
-        } lg:flex w-72 shrink-0 border-l border-gray-200/70 bg-[#f9f9f9] flex-col`}
+        className={`${historyOpen ? 'flex' : 'hidden'} ${
+          panelCollapsed ? 'lg:hidden' : 'lg:flex'
+        } w-72 shrink-0 border-l border-gray-200/70 bg-[#f9f9f9] flex-col`}
       >
         <div className="px-3 pt-3 pb-2 flex items-center justify-between">
           <button
@@ -731,6 +748,13 @@ export function AiBriefClient() {
             className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200/60 transition-colors"
           >
             <SquarePen className="h-4 w-4" /> New brief
+          </button>
+          <button
+            className="hidden lg:flex text-gray-400 hover:text-gray-600 p-1.5 rounded-md hover:bg-gray-200/60 transition-colors"
+            onClick={() => setPanelCollapsed(true)}
+            aria-label="Collapse briefs panel"
+          >
+            <PanelRightClose className="h-4 w-4" />
           </button>
           <button
             className="lg:hidden text-gray-400 hover:text-gray-600 p-1.5"

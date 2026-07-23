@@ -19,8 +19,10 @@ export async function PUT(
     const body = await request.json();
     const { id } = await params;
 
-    // Never update primary key or row identity fields
-    const { id: _id, project_id, created_at, updated_at, ...projectFields } = body;
+    // Never update primary key or row identity fields.
+    // project_completion_date is an order-level field (each order has its own,
+    // edited via the order edit modal) — never write it from the project side.
+    const { id: _id, project_id, created_at, updated_at, project_completion_date, ...projectFields } = body;
 
     const { data, error } = await supabaseAdmin
       .from('projects')

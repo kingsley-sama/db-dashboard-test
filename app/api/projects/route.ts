@@ -24,7 +24,11 @@ export async function GET(request: NextRequest) {
     const filterPmType = searchParams.get('filterPmType') || '';
     const filterStatus = searchParams.get('filterStatus') || '';
 
-    let query = supabaseAdmin.from('projects').select('*', { count: 'exact' });
+    // Join orders: the project end date shown on the dashboard comes from the
+    // orders table (orders.project_completion_date), not the projects table.
+    let query = supabaseAdmin
+      .from('projects')
+      .select('*, orders(project_completion_date)', { count: 'exact' });
 
     // Apply search filter across multiple fields
     if (search) {
@@ -59,8 +63,22 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    // Replace projects.project_completion_date with the latest one set on the
+    // project's orders (a project can have several orders).
+    const flattenedData = (data || []).map((project: any) => {
+      const { orders, ...rest } = project;
+      const orderDates = (orders || [])
+        .map((o: any) => o.project_completion_date)
+        .filter(Boolean)
+        .sort();
+      return {
+        ...rest,
+        project_completion_date: orderDates[orderDates.length - 1] || null,
+      };
+    });
+
     return NextResponse.json({
-      data: data || [],
+      data: flattenedData,
       pagination: {
         page,
         limit,

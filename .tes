@@ -1,0 +1,6 @@
+cat >> /root/.n8n/.env << 'EOF'
+N8N_DEFAULT_BINARY_DATA_MODE=filesystem
+REVISION_API_KEY=MDoLOEP/VqPuJVf4dNEnDTjJnHUtaKHCTRSN6MGlIFM=
+NODE_OPTIONS=--max-old-space-size=3072
+EOF
+chmod 600 /root/.n8n/.env
