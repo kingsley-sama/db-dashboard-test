@@ -116,12 +116,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Flatten projects fields into each order row
+    // Flatten projects fields into each order row. The first-delivery date is
+    // NOT flattened: it now comes from the order's own
+    // date_first_delivery_complete column, picked up by the `*` select. The
+    // project's delivery_completion_date is still joined, but only to gate APM
+    // access below.
     const flattenedData = (data || []).map((order: any) => {
       const { projects, ...rest } = order;
       return {
         ...rest,
-        delivery_completion_date: projects?.delivery_completion_date || null,
         project_name: projects?.project_name || null,
         customer_name: projects?.client_contact_name || null,
         customer_email: projects?.company_email || null,

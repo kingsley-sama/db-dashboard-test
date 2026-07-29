@@ -36,21 +36,19 @@ export async function PUT(
       }
     }
 
-    // Separate project_id and project-only fields from order fields
-    const { project_id, delivery_completion_date, ...orderFields } = body;
+    // Separate project_id and project-only fields from order fields.
+    // date_first_delivery_complete stays in orderFields — it is an orders column.
+    const { project_id, ...orderFields } = body;
 
-    // Sync questionnaire_received, deposit, and delivery_completion_date to the projects table
+    // Sync questionnaire_received and deposit to the projects table
     const { questionnaire_received, deposit } = body;
-    if ((questionnaire_received !== undefined || deposit !== undefined || delivery_completion_date !== undefined) && project_id) {
+    if ((questionnaire_received !== undefined || deposit !== undefined) && project_id) {
       const projectUpdate: Record<string, string | null> = {};
       if (questionnaire_received !== undefined) {
         projectUpdate.questionnaire_received = questionnaire_received || null;
       }
       if (deposit !== undefined) {
         projectUpdate.deposit = deposit || null;
-      }
-      if (delivery_completion_date !== undefined) {
-        projectUpdate.delivery_completion_date = delivery_completion_date || null;
       }
 
       const { error: projectError } = await supabaseAdmin

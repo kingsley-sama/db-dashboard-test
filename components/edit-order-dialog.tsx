@@ -91,10 +91,10 @@ export function EditOrderDialog({
       delay_first_delivery: formData.delay_first_delivery !== "" && formData.delay_first_delivery != null ? Number.parseInt(formData.delay_first_delivery) : null,
       delay_first_revision: formData.delay_first_revision !== "" && formData.delay_first_revision != null ? Number.parseInt(formData.delay_first_revision) : null,
       delay_second_revision: formData.delay_second_revision !== "" && formData.delay_second_revision != null ? Number.parseInt(formData.delay_second_revision) : null,
+      date_first_delivery_complete: formData.date_first_delivery_complete || null,
       // These fields are saved to the projects table via the API
       questionnaire_received: formData.questionnaire_received || null,
       deposit: formData.deposit || null,
-      delivery_completion_date: formData.delivery_completion_date || null,
       // New PM dashboard fields
       pm_type: formData.pm_type || null,
       supplier_payment: formData.supplier_payment || null,
@@ -423,9 +423,9 @@ export function EditOrderDialog({
               <div>
                 <label className="text-sm font-medium" style={{ color: '#012e64' }}>Date First Delivery Complete</label>
                 <Input
-                  name="delivery_completion_date"
+                  name="date_first_delivery_complete"
                   type="date"
-                  value={formData.delivery_completion_date ? formData.delivery_completion_date.split("T")[0] : ""}
+                  value={formData.date_first_delivery_complete ? formData.date_first_delivery_complete.split("T")[0] : ""}
                   onChange={handleChange}
                   className="bg-white"
                   style={{ borderColor: '#8d9499', color: '#012e64' }}
