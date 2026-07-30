@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -48,14 +48,33 @@ interface ProjectHit {
   project_status: string | null;
 }
 
-interface BriefJob {
+type EntryStatus = 'processing' | 'success' | 'error' | 'stopped';
+
+// One request + its response inside a project's conversation.
+interface BriefEntry {
   job_id: string;
-  project_id: string | null;
-  status: 'processing' | 'success' | 'error' | 'stopped';
+  status: EntryStatus;
   error_code: string | null;
-  created_at: string;
+  request: {
+    project_id: string;
+    project_name: string | null;
+    text: string | null;
+  } | null;
+  created_at: string | null;
   completed_at: string | null;
   has_result: boolean;
+  result_payload?: any;
+  has_thread_file?: boolean;
+}
+
+// A project's full brief history — one row in brief_conversations.
+interface Conversation {
+  project_id: string;
+  project_name: string | null;
+  created_at: string;
+  updated_at: string;
+  entry_count: number;
+  entries: BriefEntry[];
 }
 
 interface BriefSummary {
@@ -66,16 +85,14 @@ interface BriefSummary {
 }
 
 interface BriefResult {
-  status: 'success' | 'error';
-  job_id: string;
-  project_id: string;
+  project_id?: string;
   project_name?: string;
   pm?: { mailbox_email?: string };
   summary?: BriefSummary | string;
   raw_thread_file?: {
     filename: string;
     mime_type: string;
-    content: string; // base64
+    content: string | null; // base64; null in thread responses, fetched on demand
   };
   metadata?: {
     email_count?: number;
@@ -95,11 +112,10 @@ const SUMMARY_SECTIONS: { key: keyof BriefSummary; title: string }[] = [
   { key: 'notable_moments', title: 'Notable Quotes or Moments' }
 ];
 
-// n8n sometimes delivers the result (or the summary inside it) wrapped in a
-// one-element items array — e.g. [{ summary: {...} }] — or as a JSON string.
-// Normalize every stored shape to a flat BriefResult so historical briefs
-// render instead of falling through to "no summary was included".
-const normalizeResult = (raw: any, job: BriefJob): BriefResult => {
+// n8n sometimes delivers the summary wrapped in a one-element items array —
+// e.g. [{ summary: {...} }] — or as a JSON string. Normalize every stored shape
+// so historical briefs render instead of falling through to "no summary".
+const normalizeResult = (raw: any): BriefResult => {
   const result = (Array.isArray(raw) ? raw[0] : raw) ?? {};
   // Some workflow versions nest the summary inside raw_thread_file instead of
   // at the top level — fall back to it so those briefs still render.
@@ -110,18 +126,16 @@ const normalizeResult = (raw: any, job: BriefJob): BriefResult => {
   }
   if (typeof summary === 'string' && /^\s*[[{]/.test(summary)) {
     try {
-      summary = normalizeResult([{ summary: JSON.parse(summary) }], job).summary;
+      summary = normalizeResult([{ summary: JSON.parse(summary) }]).summary;
     } catch {
       // plain-text summary that happens to start with a bracket — keep as is
     }
   }
-  return {
-    ...result,
-    summary,
-    job_id: result.job_id ?? job.job_id,
-    project_id: result.project_id ?? job.project_id ?? ''
-  };
+  return { ...result, summary };
 };
+
+const projectLabel = (id: string, name?: string | null) =>
+  name ? `${id} — ${name}` : id;
 
 export function AiBriefClient() {
   const [search, setSearch] = useState('');
@@ -130,21 +144,24 @@ export function AiBriefClient() {
   const [selected, setSelected] = useState<ProjectHit | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const [jobs, setJobs] = useState<BriefJob[]>([]);
-  const [jobsLoaded, setJobsLoaded] = useState(false);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversationsLoaded, setConversationsLoaded] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   // Desktop-only: collapses the docked panel entirely (mobile uses historyOpen)
   const [panelCollapsed, setPanelCollapsed] = useState(false);
 
-  // The brief currently shown in the conversation pane
-  const [activeJobId, setActiveJobId] = useState<string | null>(null);
-  const [activeLabel, setActiveLabel] = useState<string | null>(null);
-  const [viewedResult, setViewedResult] = useState<BriefResult | null>(null);
-  const [loadingResultId, setLoadingResultId] = useState<string | null>(null);
+  // The project whose conversation is open, and its entries
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [thread, setThread] = useState<Conversation | null>(null);
+  const [threadLoading, setThreadLoading] = useState(false);
   const [stoppingId, setStoppingId] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<BriefJob | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const [deleteEntry, setDeleteEntry] = useState<BriefEntry | null>(null);
+  const [deleteThread, setDeleteThread] = useState<Conversation | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const autoLoadedRef = useRef<Set<string>>(new Set());
+
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // Debounced project search
   useEffect(() => {
@@ -170,90 +187,113 @@ export function AiBriefClient() {
   }, [search, selected]);
 
   // Completion toasts are handled globally by useBriefNotifications (mounted in
-  // the dashboard shell), so this list only keeps itself fresh.
-  const refreshJobs = async () => {
+  // the dashboard shell), so this page only keeps itself fresh.
+  const refreshConversations = useCallback(async () => {
     try {
-      const res = await fetch('/api/project-brief/jobs');
+      const res = await fetch('/api/project-brief/conversations');
       const json = await res.json();
       if (!res.ok) return;
-      setJobs(json.data || []);
-      setJobsLoaded(true);
+      setConversations(json.data || []);
+      setConversationsLoaded(true);
     } catch {
       // transient — next poll will retry
     }
-  };
-
-  // Load the queue on mount, then poll while any job is still processing
-  useEffect(() => {
-    refreshJobs();
   }, []);
 
-  const hasProcessing = jobs.some((j) => j.status === 'processing');
-  useEffect(() => {
-    if (!hasProcessing) return;
-    const interval = setInterval(refreshJobs, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [hasProcessing]);
-
-  const viewResult = async (job: BriefJob) => {
-    setLoadingResultId(job.job_id);
-    try {
-      const res = await fetch(`/api/project-brief/${job.job_id}`);
-      const json = await res.json();
-      if (!res.ok || !json.data?.result_payload) {
-        toast.error('No result stored for this brief', {
-          description:
-            'The workflow finished but its result was never delivered to this app (e.g. it was sent to a test callback URL). Queue a new brief for this project.'
-        });
-        return;
+  const loadThread = useCallback(
+    async (projectId: string, { silent = false } = {}) => {
+      if (!silent) setThreadLoading(true);
+      try {
+        const res = await fetch(
+          `/api/project-brief/conversations/${encodeURIComponent(projectId)}`
+        );
+        const json = await res.json();
+        if (!res.ok) {
+          if (!silent) {
+            toast.error('Could not open this conversation', {
+              description: json.error
+            });
+          }
+          return;
+        }
+        setThread(json.data);
+      } catch (err: any) {
+        if (!silent) {
+          toast.error('Could not open this conversation', {
+            description: err.message
+          });
+        }
+      } finally {
+        if (!silent) setThreadLoading(false);
       }
-      setViewedResult(normalizeResult(json.data.result_payload, job));
-    } catch (err: any) {
-      toast.error('Could not load the brief result', { description: err.message });
-    } finally {
-      setLoadingResultId(null);
-    }
+    },
+    []
+  );
+
+  useEffect(() => {
+    refreshConversations();
+  }, [refreshConversations]);
+
+  // Poll while anything in the open conversation is still being generated, so
+  // the response lands under its request without a reload.
+  const threadProcessing = thread?.entries.some((e) => e.status === 'processing');
+  useEffect(() => {
+    if (!threadProcessing || !activeProjectId) return;
+    const interval = setInterval(() => {
+      loadThread(activeProjectId, { silent: true });
+      refreshConversations();
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [threadProcessing, activeProjectId, loadThread, refreshConversations]);
+
+  // Keep the newest exchange in view, like a chat window
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [thread?.project_id, thread?.entries.length]);
+
+  const openConversation = (projectId: string) => {
+    setActiveProjectId(projectId);
+    setThread(null);
+    setHistoryOpen(false);
+    setSelected(null);
+    setSearch('');
+    loadThread(projectId);
   };
 
-  const activeJob = activeJobId
-    ? jobs.find((j) => j.job_id === activeJobId) ?? null
-    : null;
+  const startNewBrief = () => {
+    setActiveProjectId(null);
+    setThread(null);
+    setSelected(null);
+    setSearch('');
+    setHistoryOpen(false);
+  };
 
-  // When the active job finishes in the background, pull its result into the
-  // conversation automatically (once per job).
-  useEffect(() => {
-    if (!activeJob || activeJob.status !== 'success' || !activeJob.has_result) return;
-    if (viewedResult?.job_id === activeJob.job_id) return;
-    if (loadingResultId || autoLoadedRef.current.has(activeJob.job_id)) return;
-    autoLoadedRef.current.add(activeJob.job_id);
-    viewResult(activeJob);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobs, activeJobId]);
+  // The project the composer will queue for: an explicitly picked one, else the
+  // conversation currently open (so a follow-up brief continues the thread).
+  const targetProjectId = selected?.project_id ?? activeProjectId;
 
   const queueBrief = async () => {
-    if (!selected) return;
+    if (!targetProjectId) return;
     setSubmitting(true);
     try {
       const res = await fetch('/api/project-brief', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_id: selected.project_id })
+        body: JSON.stringify({ project_id: targetProjectId })
       });
       const json = await res.json();
       if (!res.ok) {
         toast.error('Could not queue the brief', { description: json.error });
         return;
       }
-      setActiveLabel(
-        selected.project_name
-          ? `${selected.project_id} — ${selected.project_name}`
-          : selected.project_id
-      );
-      setViewedResult(null);
-      setActiveJobId(json.job_id ?? null);
+      setActiveProjectId(targetProjectId);
       setSelected(null);
       setSearch('');
-      await refreshJobs();
+      await Promise.all([
+        loadThread(targetProjectId, { silent: thread?.project_id === targetProjectId }),
+        refreshConversations()
+      ]);
     } catch (err: any) {
       toast.error('Could not queue the brief', { description: err.message });
     } finally {
@@ -261,29 +301,10 @@ export function AiBriefClient() {
     }
   };
 
-  const openJob = (job: BriefJob) => {
-    setActiveJobId(job.job_id);
-    setActiveLabel(job.project_id);
-    setHistoryOpen(false);
-    if (viewedResult?.job_id !== job.job_id) {
-      setViewedResult(null);
-      if (job.status === 'success' && job.has_result) viewResult(job);
-    }
-  };
-
-  const startNewBrief = () => {
-    setActiveJobId(null);
-    setActiveLabel(null);
-    setViewedResult(null);
-    setSelected(null);
-    setSearch('');
-    setHistoryOpen(false);
-  };
-
-  const stopJob = async (job: BriefJob) => {
-    setStoppingId(job.job_id);
+  const stopEntry = async (entry: BriefEntry) => {
+    setStoppingId(entry.job_id);
     try {
-      const res = await fetch(`/api/project-brief/${job.job_id}`, {
+      const res = await fetch(`/api/project-brief/${entry.job_id}`, {
         method: 'PATCH'
       });
       const json = await res.json();
@@ -291,12 +312,8 @@ export function AiBriefClient() {
         toast.error('Could not stop the brief', { description: json.error });
         return;
       }
-      setJobs((prev) =>
-        prev.map((j) =>
-          j.job_id === job.job_id ? { ...j, status: 'stopped' as const } : j
-        )
-      );
-      await refreshJobs();
+      if (activeProjectId) await loadThread(activeProjectId, { silent: true });
+      await refreshConversations();
     } catch (err: any) {
       toast.error('Could not stop the brief', { description: err.message });
     } finally {
@@ -304,85 +321,323 @@ export function AiBriefClient() {
     }
   };
 
-  const deleteJob = async (job: BriefJob) => {
+  const removeEntry = async (entry: BriefEntry) => {
     setDeleting(true);
     try {
-      const res = await fetch(`/api/project-brief/${job.job_id}`, {
+      const res = await fetch(`/api/project-brief/${entry.job_id}`, {
         method: 'DELETE'
       });
       const json = await res.json();
       if (!res.ok) {
-        toast.error('Could not delete the brief', { description: json.error });
+        toast.error('Could not delete this brief', { description: json.error });
         return;
       }
-      setJobs((prev) => prev.filter((j) => j.job_id !== job.job_id));
-      if (activeJobId === job.job_id) {
-        setActiveJobId(null);
-        setActiveLabel(null);
-        setViewedResult(null);
+      const remaining = (thread?.entries.length ?? 0) - 1;
+      if (activeProjectId) {
+        // Deleting the last entry removes the conversation itself
+        if (remaining <= 0) startNewBrief();
+        else await loadThread(activeProjectId, { silent: true });
       }
+      await refreshConversations();
     } catch (err: any) {
-      toast.error('Could not delete the brief', { description: err.message });
+      toast.error('Could not delete this brief', { description: err.message });
     } finally {
       setDeleting(false);
-      setDeleteTarget(null);
+      setDeleteEntry(null);
     }
   };
 
-  const downloadThreadFile = (result: BriefResult) => {
-    const file = result.raw_thread_file;
-    if (!file) return;
-    const bytes = Uint8Array.from(atob(file.content), (c) => c.charCodeAt(0));
-    const blob = new Blob([bytes], { type: file.mime_type || 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = file.filename || `${result.project_id}_email_thread.md`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const removeConversation = async (conversation: Conversation) => {
+    setDeleting(true);
+    try {
+      const res = await fetch(
+        `/api/project-brief/conversations/${encodeURIComponent(conversation.project_id)}`,
+        { method: 'DELETE' }
+      );
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error('Could not delete this conversation', { description: json.error });
+        return;
+      }
+      setConversations((prev) =>
+        prev.filter((c) => c.project_id !== conversation.project_id)
+      );
+      if (activeProjectId === conversation.project_id) startNewBrief();
+    } catch (err: any) {
+      toast.error('Could not delete this conversation', { description: err.message });
+    } finally {
+      setDeleting(false);
+      setDeleteThread(null);
+    }
   };
 
-  const copySummary = async (result: BriefResult) => {
+  // The thread response omits the base64 attachment — fetch the full entry only
+  // when the user actually asks for the file.
+  const downloadThreadFile = async (entry: BriefEntry, result: BriefResult) => {
+    setDownloadingId(entry.job_id);
+    try {
+      const res = await fetch(`/api/project-brief/${entry.job_id}`);
+      const json = await res.json();
+      const file = normalizeResult(json.data?.result_payload).raw_thread_file;
+      if (!res.ok || !file?.content) {
+        toast.error('Could not download the email thread');
+        return;
+      }
+      const bytes = Uint8Array.from(atob(file.content), (c) => c.charCodeAt(0));
+      const blob = new Blob([bytes], { type: file.mime_type || 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.filename || `${result.project_id}_email_thread.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      toast.error('Could not download the email thread', { description: err.message });
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const copySummary = async (result: BriefResult, projectId: string) => {
     let text = '';
     if (result.summary && typeof result.summary === 'object') {
       text = SUMMARY_SECTIONS.filter(({ key }) => (result.summary as BriefSummary)[key])
-        .map(
-          ({ key, title }) =>
-            `${title}\n${(result.summary as BriefSummary)[key]}`
-        )
+        .map(({ key, title }) => `${title}\n${(result.summary as BriefSummary)[key]}`)
         .join('\n\n');
     } else if (typeof result.summary === 'string') {
       text = result.summary;
     }
     if (!text) return;
     try {
-      await navigator.clipboard.writeText(
-        `Project brief — ${result.project_id}\n\n${text}`
-      );
+      await navigator.clipboard.writeText(`Project brief — ${projectId}\n\n${text}`);
       toast.success('Summary copied to clipboard');
     } catch {
       toast.error('Could not copy the summary');
     }
   };
 
-  const summaryIsStructured =
-    viewedResult?.summary && typeof viewedResult.summary === 'object';
-  const summaryText =
-    viewedResult?.summary && typeof viewedResult.summary === 'string'
-      ? viewedResult.summary
-      : null;
-
-  const jobStatusDot = (job: BriefJob) => {
-    if (job.status === 'processing')
+  const statusDot = (status: EntryStatus) => {
+    if (status === 'processing')
       return <Loader2 className="h-4 w-4 animate-spin text-gray-400" />;
-    if (job.status === 'success')
+    if (status === 'success')
       return <CheckCircle2 className="h-4 w-4 text-emerald-600" />;
-    if (job.status === 'stopped')
-      return <CircleStop className="h-4 w-4 text-gray-400" />;
+    if (status === 'stopped') return <CircleStop className="h-4 w-4 text-gray-400" />;
     return <AlertCircle className="h-4 w-4 text-red-500" />;
   };
 
-  const showConversation = activeJobId !== null || viewedResult !== null;
+  const conversationSubtitle = (conversation: Conversation) => {
+    const last = conversation.entries[conversation.entries.length - 1];
+    if (!last) return '';
+    if (last.status === 'processing') return 'Generating…';
+    const count = `${conversation.entry_count} brief${
+      conversation.entry_count === 1 ? '' : 's'
+    }`;
+    return `${count} · ${new Date(conversation.updated_at).toLocaleDateString()}`;
+  };
+
+  const showConversation = activeProjectId !== null;
+
+  // ── One request + response pair ───────────────────────────────────────────
+  const renderEntry = (entry: BriefEntry) => {
+    const result = entry.result_payload ? normalizeResult(entry.result_payload) : null;
+    const structured = result?.summary && typeof result.summary === 'object';
+    const plainText =
+      result?.summary && typeof result.summary === 'string' ? result.summary : null;
+    const label = projectLabel(
+      entry.request?.project_id ?? thread?.project_id ?? '',
+      entry.request?.project_name ?? result?.project_name ?? thread?.project_name
+    );
+
+    return (
+      <div key={entry.job_id} className="space-y-5 group/entry">
+        {/* User request */}
+        <div className="flex items-start gap-3">
+          <div className="h-9 w-9 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+            <User className="h-4 w-4 text-gray-500" />
+          </div>
+          <div className="rounded-2xl rounded-tl-md border border-gray-200 bg-white px-4 py-3 shadow-sm">
+            <p className="text-sm text-gray-800">
+              Generate a <span className="font-semibold">project brief</span> for{' '}
+              <span className="font-semibold">{label}</span>
+            </p>
+            {entry.created_at && (
+              <p className="text-[11px] text-gray-400 mt-1">
+                {new Date(entry.created_at).toLocaleString()}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={() => setDeleteEntry(entry)}
+            className="mt-2 text-gray-300 hover:text-red-500 opacity-0 group-hover/entry:opacity-100 focus:opacity-100 transition-opacity"
+            aria-label="Delete this brief from the conversation"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Response */}
+        <div className="flex items-start gap-3">
+          <div
+            className="h-9 w-9 rounded-full flex items-center justify-center shrink-0"
+            style={{ backgroundColor: BRAND }}
+          >
+            <Sparkles className="h-4 w-4 text-white" />
+          </div>
+          <div className="flex-1 min-w-0 rounded-2xl rounded-tl-md bg-gray-50 border border-gray-100 px-5 py-4">
+            {entry.status === 'processing' && (
+              <div className="flex items-center gap-3 py-2">
+                <Loader2 className="h-4 w-4 animate-spin text-gray-400 shrink-0" />
+                <p className="text-sm text-gray-500 flex-1">
+                  Reading the email history and writing the brief… this can take a
+                  few minutes. You can keep working — it'll appear here when it's
+                  done.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 text-gray-600 rounded-full"
+                  disabled={stoppingId === entry.job_id}
+                  onClick={() => stopEntry(entry)}
+                >
+                  {stoppingId === entry.job_id ? (
+                    <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                  ) : (
+                    <CircleStop className="h-4 w-4 mr-1.5" />
+                  )}
+                  Stop
+                </Button>
+              </div>
+            )}
+
+            {entry.status === 'stopped' && (
+              <div className="flex items-center gap-3 py-2">
+                <CircleStop className="h-4 w-4 text-gray-400 shrink-0" />
+                <p className="text-sm text-gray-500">
+                  This brief was stopped. Ask for another one below if you still
+                  need it.
+                </p>
+              </div>
+            )}
+
+            {entry.status === 'error' && (
+              <div className="flex items-start gap-3 py-2">
+                <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-gray-900">
+                    This brief failed ({entry.error_code || 'unknown error'})
+                  </p>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Ask for another brief below to try again.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {entry.status === 'success' && !result && (
+              <div className="flex items-start gap-3 py-2">
+                <FileText className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
+                <p className="text-sm text-gray-500">
+                  The workflow completed but its result was delivered to a different
+                  callback URL. Ask for another brief below.
+                </p>
+              </div>
+            )}
+
+            {entry.status === 'success' && result && (
+              <div>
+                <p className="text-sm text-gray-800 mb-1">
+                  Here's the brief for <span className="font-semibold">{label}</span>:
+                </p>
+                <p className="text-xs text-gray-400 mb-4">
+                  {result.metadata?.email_count != null &&
+                    `${result.metadata.email_count} emails analyzed`}
+                  {result.pm?.mailbox_email && ` · mailbox: ${result.pm.mailbox_email}`}
+                </p>
+
+                {structured && (
+                  <div className="space-y-4">
+                    {SUMMARY_SECTIONS.map(({ key, title }) => {
+                      const content = (result.summary as BriefSummary)[key];
+                      if (!content) return null;
+                      return (
+                        <div
+                          key={key}
+                          className="rounded-xl bg-white border border-gray-200 p-4"
+                        >
+                          <h3
+                            className="text-xs font-semibold uppercase tracking-wide mb-2"
+                            style={{ color: BRAND }}
+                          >
+                            {title}
+                          </h3>
+                          <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                            {content}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {plainText && (
+                  <div className="rounded-xl bg-white border border-gray-200 p-4">
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                      {plainText}
+                    </p>
+                  </div>
+                )}
+
+                {!structured && !plainText && (
+                  <div className="flex items-start gap-3">
+                    <FileText className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
+                    <p className="text-sm text-gray-500">
+                      No summary was included with this brief — the full email thread
+                      is available via the download button below
+                      {result.raw_thread_file?.filename
+                        ? ` (${result.raw_thread_file.filename})`
+                        : ''}
+                      .
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-1 mt-4 pt-3 border-t border-gray-200">
+                  {(structured || plainText) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-gray-500"
+                      onClick={() =>
+                        copySummary(result, entry.request?.project_id ?? '')
+                      }
+                    >
+                      <Copy className="h-4 w-4 mr-1.5" /> Copy
+                    </Button>
+                  )}
+                  {entry.has_thread_file && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-gray-500"
+                      disabled={downloadingId === entry.job_id}
+                      onClick={() => downloadThreadFile(entry, result)}
+                    >
+                      {downloadingId === entry.job_id ? (
+                        <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                      ) : (
+                        <FileDown className="h-4 w-4 mr-1.5" />
+                      )}
+                      Download thread
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="flex h-[calc(100dvh-140px)] lg:h-[calc(100dvh-84px)] overflow-hidden">
@@ -399,10 +654,14 @@ export function AiBriefClient() {
             </div>
             <div>
               <h1 className="text-sm font-semibold text-gray-900 leading-tight">
-                Project Brief
+                {thread
+                  ? projectLabel(thread.project_id, thread.project_name)
+                  : 'Project Brief'}
               </h1>
               <p className="text-xs text-gray-400 leading-tight">
-                AI summary of a project's email history
+                {thread
+                  ? `${thread.entry_count} brief${thread.entry_count === 1 ? '' : 's'} in this conversation`
+                  : "AI summary of a project's email history"}
               </p>
             </div>
           </div>
@@ -430,7 +689,7 @@ export function AiBriefClient() {
         </div>
 
         {/* Scrolling chat area */}
-        <div className="flex-1 overflow-y-auto">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto">
           {!showConversation ? (
             /* Welcome state */
             <div className="h-full flex flex-col items-center justify-center px-6 text-center">
@@ -440,7 +699,8 @@ export function AiBriefClient() {
               <p className="text-gray-500 mt-3 max-w-md">
                 Search for a project below and generate a brief of its full email
                 history. It runs in the background — you'll be notified when it's
-                ready.
+                ready, and every brief you run for a project is kept together in one
+                conversation.
               </p>
               <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg">
                 <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-left">
@@ -461,208 +721,13 @@ export function AiBriefClient() {
                 </div>
               </div>
             </div>
+          ) : threadLoading && !thread ? (
+            <div className="flex items-center justify-center gap-2 text-sm text-gray-400 py-10">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading conversation…
+            </div>
           ) : (
-            <div className="max-w-3xl mx-auto px-4 lg:px-6 py-6 space-y-5">
-              {/* User request bubble */}
-              <div className="flex items-start gap-3">
-                <div className="h-9 w-9 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
-                  <User className="h-4 w-4 text-gray-500" />
-                </div>
-                <div className="rounded-2xl rounded-tl-md border border-gray-200 bg-white px-4 py-3 shadow-sm">
-                  <p className="text-sm text-gray-800">
-                    Generate a <span className="font-semibold">project brief</span> for{' '}
-                    <span className="font-semibold">
-                      {viewedResult
-                        ? `${viewedResult.project_id}${
-                            viewedResult.project_name
-                              ? ` — ${viewedResult.project_name}`
-                              : ''
-                          }`
-                        : activeLabel}
-                    </span>
-                  </p>
-                </div>
-              </div>
-
-              {/* Assistant bubble */}
-              <div className="flex items-start gap-3">
-                <div
-                  className="h-9 w-9 rounded-full flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: BRAND }}
-                >
-                  <Sparkles className="h-4 w-4 text-white" />
-                </div>
-                <div className="flex-1 min-w-0 rounded-2xl rounded-tl-md bg-gray-50 border border-gray-100 px-5 py-4">
-                  {/* Still processing */}
-                  {activeJob?.status === 'processing' && !viewedResult && (
-                    <div className="flex items-center gap-3 py-2">
-                      <Loader2 className="h-4 w-4 animate-spin text-gray-400 shrink-0" />
-                      <p className="text-sm text-gray-500 flex-1">
-                        Reading the email history and writing the brief… this can
-                        take a few minutes. You can keep working — it'll appear
-                        here when it's done.
-                      </p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="shrink-0 text-gray-600 rounded-full"
-                        disabled={stoppingId === activeJob.job_id}
-                        onClick={() => stopJob(activeJob)}
-                      >
-                        {stoppingId === activeJob.job_id ? (
-                          <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                        ) : (
-                          <CircleStop className="h-4 w-4 mr-1.5" />
-                        )}
-                        Stop
-                      </Button>
-                    </div>
-                  )}
-
-                  {/* Stopped by the user */}
-                  {activeJob?.status === 'stopped' && !viewedResult && (
-                    <div className="flex items-center gap-3 py-2">
-                      <CircleStop className="h-4 w-4 text-gray-400 shrink-0" />
-                      <p className="text-sm text-gray-500">
-                        This brief was stopped. Queue a new one for this project
-                        if you still need it.
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Failed */}
-                  {activeJob?.status === 'error' && !viewedResult && (
-                    <div className="flex items-start gap-3 py-2">
-                      <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          This brief failed ({activeJob.error_code || 'unknown error'})
-                        </p>
-                        <p className="text-sm text-gray-500 mt-1">
-                          Queue a new brief for this project to try again.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Fetching the stored result */}
-                  {loadingResultId && !viewedResult && (
-                    <div className="flex items-center gap-3 py-2">
-                      <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
-                      <p className="text-sm text-gray-500">Loading the brief…</p>
-                    </div>
-                  )}
-
-                  {/* Completed but nothing stored */}
-                  {activeJob?.status === 'success' &&
-                    !activeJob.has_result &&
-                    !viewedResult &&
-                    !loadingResultId && (
-                      <div className="flex items-start gap-3 py-2">
-                        <FileText className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
-                        <p className="text-sm text-gray-500">
-                          The workflow completed but its result was delivered to a
-                          different callback URL. Queue a new brief for this
-                          project.
-                        </p>
-                      </div>
-                    )}
-
-                  {/* The brief itself */}
-                  {viewedResult && (
-                    <div>
-                      <p className="text-sm text-gray-800 mb-1">
-                        Here's the brief for{' '}
-                        <span className="font-semibold">
-                          {viewedResult.project_id}
-                          {viewedResult.project_name
-                            ? ` — ${viewedResult.project_name}`
-                            : ''}
-                        </span>
-                        :
-                      </p>
-                      <p className="text-xs text-gray-400 mb-4">
-                        {viewedResult.metadata?.email_count != null &&
-                          `${viewedResult.metadata.email_count} emails analyzed`}
-                        {viewedResult.pm?.mailbox_email &&
-                          ` · mailbox: ${viewedResult.pm.mailbox_email}`}
-                      </p>
-
-                      {summaryIsStructured && (
-                        <div className="space-y-4">
-                          {SUMMARY_SECTIONS.map(({ key, title }) => {
-                            const content = (viewedResult.summary as BriefSummary)[key];
-                            if (!content) return null;
-                            return (
-                              <div
-                                key={key}
-                                className="rounded-xl bg-white border border-gray-200 p-4"
-                              >
-                                <h3
-                                  className="text-xs font-semibold uppercase tracking-wide mb-2"
-                                  style={{ color: BRAND }}
-                                >
-                                  {title}
-                                </h3>
-                                <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                                  {content}
-                                </p>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {summaryText && (
-                        <div className="rounded-xl bg-white border border-gray-200 p-4">
-                          <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                            {summaryText}
-                          </p>
-                        </div>
-                      )}
-
-                      {!summaryIsStructured && !summaryText && (
-                        <div className="flex items-start gap-3">
-                          <FileText className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
-                          <p className="text-sm text-gray-500">
-                            No summary was included with this brief — the full
-                            email thread is available via the download button
-                            below
-                            {viewedResult.raw_thread_file?.filename
-                              ? ` (${viewedResult.raw_thread_file.filename})`
-                              : ''}
-                            .
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Actions */}
-                      <div className="flex items-center justify-end gap-1 mt-4 pt-3 border-t border-gray-200">
-                        {(summaryIsStructured || summaryText) && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-gray-500"
-                            onClick={() => copySummary(viewedResult)}
-                          >
-                            <Copy className="h-4 w-4 mr-1.5" /> Copy
-                          </Button>
-                        )}
-                        {viewedResult.raw_thread_file && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-gray-500"
-                            onClick={() => downloadThreadFile(viewedResult)}
-                          >
-                            <FileDown className="h-4 w-4 mr-1.5" /> Download thread
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
+            <div className="max-w-3xl mx-auto px-4 lg:px-6 py-6 space-y-8">
+              {thread?.entries.map(renderEntry)}
             </div>
           )}
         </div>
@@ -723,14 +788,18 @@ export function AiBriefClient() {
                 <Input
                   value={
                     selected
-                      ? `${selected.project_id} — ${selected.project_name ?? ''}`
+                      ? projectLabel(selected.project_id, selected.project_name)
                       : search
                   }
                   onChange={(e) => {
                     setSelected(null);
                     setSearch(e.target.value);
                   }}
-                  placeholder="Search by project ID, name or PM…"
+                  placeholder={
+                    activeProjectId
+                      ? `Ask for another brief for ${activeProjectId}, or search another project…`
+                      : 'Search by project ID, name or PM…'
+                  }
                   className="pl-9 border-0 shadow-none focus-visible:ring-0"
                 />
                 {selected && (
@@ -748,7 +817,7 @@ export function AiBriefClient() {
               </div>
               <Button
                 onClick={queueBrief}
-                disabled={!selected || submitting}
+                disabled={!targetProjectId || submitting}
                 className="text-white rounded-xl"
                 style={{ backgroundColor: BRAND }}
               >
@@ -793,94 +862,128 @@ export function AiBriefClient() {
           </button>
         </div>
         <div className="px-5 pt-2 pb-1">
-          <h2 className="text-xs font-medium text-gray-400">Briefs</h2>
+          <h2 className="text-xs font-medium text-gray-400">Projects</h2>
         </div>
         <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5">
-          {!jobsLoaded ? (
+          {!conversationsLoaded ? (
             <div className="flex items-center gap-2 text-sm text-gray-400 px-3 py-2">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading…
             </div>
-          ) : jobs.length === 0 ? (
+          ) : conversations.length === 0 ? (
             <p className="text-sm text-gray-400 px-3 py-2">
               No briefs yet. Search a project below to generate your first one.
             </p>
           ) : (
-            jobs.map((job) => (
-              <div key={job.job_id} className="group relative">
-                <button
-                  onClick={() => openJob(job)}
-                  className={`w-full text-left rounded-lg pl-3 pr-9 py-2 transition-colors ${
-                    activeJobId === job.job_id
-                      ? 'bg-gray-200/80'
-                      : 'hover:bg-gray-200/50'
-                  }`}
-                >
-                  <span className="block text-sm text-gray-900 truncate">
-                    {job.project_id}
-                  </span>
-                  <span className="block text-xs text-gray-400 truncate mt-0.5">
-                    {job.status === 'processing'
-                      ? 'Processing…'
-                      : job.status === 'stopped'
-                        ? 'Stopped'
-                        : job.status === 'error'
-                          ? job.error_code || 'Failed'
-                          : !job.has_result
-                            ? 'No result stored'
-                            : new Date(job.created_at).toLocaleString()}
-                  </span>
-                </button>
+            conversations.map((conversation) => {
+              const last = conversation.entries[conversation.entries.length - 1];
+              return (
+                <div key={conversation.project_id} className="group relative">
+                  <button
+                    onClick={() => openConversation(conversation.project_id)}
+                    className={`w-full text-left rounded-lg pl-3 pr-9 py-2 transition-colors ${
+                      activeProjectId === conversation.project_id
+                        ? 'bg-gray-200/80'
+                        : 'hover:bg-gray-200/50'
+                    }`}
+                  >
+                    <span className="block text-sm text-gray-900 truncate">
+                      {conversation.project_name || conversation.project_id}
+                    </span>
+                    <span className="block text-xs text-gray-400 truncate mt-0.5">
+                      {conversationSubtitle(conversation)}
+                    </span>
+                  </button>
 
-                {/* Status icon, swapped for the ⋯ menu on hover */}
-                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none group-hover:opacity-0 group-focus-within:opacity-0 transition-opacity">
-                  {jobStatusDot(job)}
-                </span>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 w-7 rounded-md flex items-center justify-center text-gray-500 hover:text-gray-800 hover:bg-gray-300/50 opacity-0 group-hover:opacity-100 focus:opacity-100 data-[state=open]:opacity-100 transition-opacity"
-                      aria-label={`Options for ${job.project_id}`}
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-40 rounded-xl">
-                    {job.status === 'processing' && (
-                      <DropdownMenuItem
-                        disabled={stoppingId === job.job_id}
-                        onClick={() => stopJob(job)}
+                  {/* Status of the latest brief, swapped for the ⋯ menu on hover */}
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none group-hover:opacity-0 group-focus-within:opacity-0 transition-opacity">
+                    {last && statusDot(last.status)}
+                  </span>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 w-7 rounded-md flex items-center justify-center text-gray-500 hover:text-gray-800 hover:bg-gray-300/50 opacity-0 group-hover:opacity-100 focus:opacity-100 data-[state=open]:opacity-100 transition-opacity"
+                        aria-label={`Options for ${conversation.project_id}`}
                       >
-                        <CircleStop className="h-4 w-4 mr-2" /> Stop
+                        <MoreHorizontal className="h-4 w-4" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-44 rounded-xl">
+                      {last?.status === 'processing' && (
+                        <DropdownMenuItem
+                          disabled={stoppingId === last.job_id}
+                          onClick={() => stopEntry(last)}
+                        >
+                          <CircleStop className="h-4 w-4 mr-2" /> Stop latest
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem
+                        className="text-red-600 focus:text-red-600"
+                        onClick={() => setDeleteThread(conversation)}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" /> Delete conversation
                       </DropdownMenuItem>
-                    )}
-                    <DropdownMenuItem
-                      className="text-red-600 focus:text-red-600"
-                      onClick={() => setDeleteTarget(job)}
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" /> Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            ))
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              );
+            })
           )}
         </div>
       </aside>
 
-      {/* Delete confirmation */}
+      {/* Delete a single exchange */}
       <AlertDialog
-        open={deleteTarget !== null}
+        open={deleteEntry !== null}
         onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null);
+          if (!open) setDeleteEntry(null);
         }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete brief?</AlertDialogTitle>
+            <AlertDialogTitle>Delete this brief?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently remove the brief for{' '}
+              This removes one request and its response from the conversation for{' '}
               <span className="font-semibold text-gray-700">
-                {deleteTarget?.project_id}
+                {deleteEntry?.request?.project_id ?? thread?.project_id}
+              </span>
+              . The rest of the history stays.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={(e) => {
+                e.preventDefault();
+                if (deleteEntry) removeEntry(deleteEntry);
+              }}
+            >
+              {deleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete a whole conversation */}
+      <AlertDialog
+        open={deleteThread !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteThread(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete conversation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes all{' '}
+              <span className="font-semibold text-gray-700">
+                {deleteThread?.entry_count}
+              </span>{' '}
+              brief{deleteThread?.entry_count === 1 ? '' : 's'} for{' '}
+              <span className="font-semibold text-gray-700">
+                {deleteThread?.project_id}
               </span>{' '}
               from your history.
             </AlertDialogDescription>
@@ -892,7 +995,7 @@ export function AiBriefClient() {
               className="bg-red-600 hover:bg-red-700 text-white"
               onClick={(e) => {
                 e.preventDefault();
-                if (deleteTarget) deleteJob(deleteTarget);
+                if (deleteThread) removeConversation(deleteThread);
               }}
             >
               {deleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

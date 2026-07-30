@@ -2,7 +2,32 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/my-app-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 
-// GET /api/project-brief/[jobId] - Poll the status/result of a brief job
+// Entries live inside the `entries` array of the user's brief_conversations row
+// for a project; a job_id identifies one entry within that array. These routes
+// address a single entry without touching the rest of the thread.
+
+async function findEntry(userEmail: string, jobId: string) {
+  const { data, error } = await supabaseAdmin
+    .from('brief_conversations')
+    .select('project_id, project_name, entries')
+    .eq('user_email', userEmail)
+    .contains('entries', [{ job_id: jobId }])
+    .limit(1);
+
+  if (error) throw new Error(error.message);
+  const thread = data?.[0];
+  if (!thread) return null;
+
+  const entry = ((thread.entries as any[]) || []).find((e) => e.job_id === jobId);
+  if (!entry) return null;
+
+  return { thread, entry };
+}
+
+// GET /api/project-brief/[jobId] - Poll the status/result of a single brief.
+// Returns the full stored payload (including the base64 email thread), which
+// the conversation view omits — used for the download action and for polling a
+// brief that is still processing.
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ jobId: string }> }
@@ -14,29 +39,29 @@ export async function GET(
     }
 
     const { jobId } = await params;
-
-    const { data, error } = await supabaseAdmin
-      .from('email_summary_jobs')
-      .select('job_id, project_id, status, error_code, result_payload, created_at, completed_at')
-      .eq('job_id', jobId)
-      .maybeSingle();
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-    if (!data) {
+    const found = await findEntry(user.email, jobId);
+    if (!found) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ data }, { status: 200 });
+    return NextResponse.json(
+      {
+        data: {
+          ...found.entry,
+          project_id: found.thread.project_id,
+          project_name: found.thread.project_name
+        }
+      },
+      { status: 200 }
+    );
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
 // PATCH /api/project-brief/[jobId] - Stop a processing brief. The n8n workflow
-// keeps running (there is no cancel webhook), but the job is marked stopped here
-// and the callback endpoint discards any result that arrives for it later.
+// keeps running (there is no cancel webhook), but the entry is marked stopped
+// here and the callback endpoint discards any result that arrives for it later.
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ jobId: string }> }
@@ -48,30 +73,22 @@ export async function PATCH(
     }
 
     const { jobId } = await params;
-
-    const { data: job, error: fetchError } = await supabaseAdmin
-      .from('email_summary_jobs')
-      .select('job_id, status, requested_by')
-      .eq('job_id', jobId)
-      .maybeSingle();
-
-    if (fetchError) {
-      return NextResponse.json({ error: fetchError.message }, { status: 500 });
-    }
-    if (!job || job.requested_by !== user.email) {
+    const found = await findEntry(user.email, jobId);
+    if (!found) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 });
     }
-    if (job.status !== 'processing') {
+    if (found.entry.status !== 'processing') {
       return NextResponse.json(
         { error: 'Only a processing brief can be stopped' },
         { status: 409 }
       );
     }
 
-    const { error } = await supabaseAdmin
-      .from('email_summary_jobs')
-      .update({ status: 'stopped', completed_at: new Date().toISOString() })
-      .eq('job_id', jobId);
+    const { error } = await supabaseAdmin.rpc('update_brief_entry', {
+      p_job_id: jobId,
+      p_patch: { status: 'stopped', completed_at: new Date().toISOString() },
+      p_user_email: user.email
+    });
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -83,8 +100,9 @@ export async function PATCH(
   }
 }
 
-// DELETE /api/project-brief/[jobId] - Remove a brief (and its stored result)
-// from the user's history.
+// DELETE /api/project-brief/[jobId] - Remove one request/response pair from the
+// thread, leaving the rest of the conversation intact. If it was the only entry
+// the thread row is removed too.
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ jobId: string }> }
@@ -97,17 +115,15 @@ export async function DELETE(
 
     const { jobId } = await params;
 
-    const { data, error } = await supabaseAdmin
-      .from('email_summary_jobs')
-      .delete()
-      .eq('job_id', jobId)
-      .eq('requested_by', user.email)
-      .select('job_id');
+    const { data, error } = await supabaseAdmin.rpc('delete_brief_entry', {
+      p_user_email: user.email,
+      p_job_id: jobId
+    });
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    if (!data || data.length === 0) {
+    if (!data) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 });
     }
 

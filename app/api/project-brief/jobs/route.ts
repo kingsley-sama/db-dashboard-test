@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/my-app-auth';
 import { supabaseAdmin } from '@/lib/supabase';
+import { summarizeEntry } from '@/lib/project-brief/entries';
 
-// GET /api/project-brief/jobs - List the current user's recent brief jobs so the
-// queue survives navigating away: n8n works in the background and the results
-// are waiting here when the user comes back.
+// GET /api/project-brief/jobs - Every brief the current user has run, flattened
+// out of their conversation threads into a newest-first list. The queue survives
+// navigating away: n8n works in the background and the results are waiting here
+// when the user comes back.
+//
+// This is the feed the global notification poller uses; the brief page itself
+// reads whole threads from /api/project-brief/conversations.
 export async function GET() {
   try {
     const user = await getCurrentUser();
@@ -13,35 +18,28 @@ export async function GET() {
     }
 
     const { data, error } = await supabaseAdmin
-      .from('email_summary_jobs')
-      .select('job_id, project_id, status, error_code, created_at, completed_at')
-      .eq('requested_by', user.email)
-      .order('created_at', { ascending: false })
-      .limit(20);
+      .from('brief_conversations')
+      .select('project_id, entries')
+      .eq('user_email', user.email)
+      .order('updated_at', { ascending: false })
+      .limit(50);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Flag which jobs actually have a stored result (a job can be marked
-    // success by the workflow while its callback was delivered elsewhere,
-    // e.g. early tests posting to webhook.site) — without shipping the
-    // heavy payloads themselves in this list.
-    const jobIds = (data || []).map((j) => j.job_id);
-    let withResult = new Set<string>();
-    if (jobIds.length > 0) {
-      const { data: resultRows } = await supabaseAdmin
-        .from('email_summary_jobs')
-        .select('job_id')
-        .in('job_id', jobIds)
-        .not('result_payload', 'is', null);
-      withResult = new Set((resultRows || []).map((r) => r.job_id));
-    }
-
-    const jobs = (data || []).map((j) => ({
-      ...j,
-      has_result: withResult.has(j.job_id)
-    }));
+    const jobs = (data || [])
+      .flatMap((thread) =>
+        (((thread.entries as any[]) || []).map((entry) => ({
+          ...summarizeEntry(entry),
+          project_id: thread.project_id
+        })))
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+      )
+      .slice(0, 50);
 
     return NextResponse.json({ data: jobs }, { status: 200 });
   } catch (error: any) {

@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
 // POST /api/project-brief/callback - Receives the async result from the n8n
-// email-summary workflow (success or error payload, see spec §10) and stores it
-// on the job row so the frontend can pick it up by polling.
+// email-summary workflow (success or error payload, see spec §10) and merges it
+// into the matching entry of the user's conversation thread
+// (brief_conversations.entries), so the frontend can pick it up by polling.
 //
 // This endpoint is called by n8n, not by a signed-in user, so it is authenticated
 // with a shared secret header instead of the session cookie.
@@ -29,36 +30,38 @@ export async function POST(request: NextRequest) {
 
     // A user can stop a brief while n8n is still working on it; when that
     // workflow eventually calls back, discard the result instead of
-    // resurrecting the job.
-    const { data: existing } = await supabaseAdmin
-      .from('email_summary_jobs')
-      .select('status')
-      .eq('job_id', job_id)
-      .maybeSingle();
-    if (existing?.status === 'stopped') {
+    // resurrecting the entry.
+    const { data: threads } = await supabaseAdmin
+      .from('brief_conversations')
+      .select('entries')
+      .contains('entries', [{ job_id }])
+      .limit(1);
+    const existingEntry = (threads?.[0]?.entries as any[] | undefined)?.find(
+      (e) => e.job_id === job_id
+    );
+    if (existingEntry?.status === 'stopped') {
       return NextResponse.json({ received: true, discarded: true }, { status: 200 });
     }
 
-    // Upsert so a callback still lands even if the trigger-side insert failed.
-    // project_id and callback_url are NOT NULL in the table, so provide
-    // fallbacks for that insert path (callback_url = this endpoint itself).
-    const { error } = await supabaseAdmin
-      .from('email_summary_jobs')
-      .upsert(
-        {
-          job_id,
-          project_id: project_id ?? 'unknown',
-          status,
-          error_code: payload.error ?? null,
-          callback_url: request.nextUrl.href,
-          result_payload: payload,
-          completed_at: new Date().toISOString()
-        },
-        { onConflict: 'job_id' }
-      );
+    // The entry is created when the brief is triggered, so a callback for an
+    // unknown job_id has nowhere to land (e.g. a workflow replayed against a
+    // thread the user has since deleted) — acknowledge it and move on rather
+    // than resurrecting a thread we can't attribute to a user.
+    const { data: updated, error } = await supabaseAdmin.rpc('update_brief_entry', {
+      p_job_id: job_id,
+      p_patch: {
+        status,
+        error_code: payload.error ?? null,
+        result_payload: payload,
+        completed_at: new Date().toISOString()
+      }
+    });
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    if (!updated || updated.length === 0) {
+      return NextResponse.json({ received: true, unmatched: true }, { status: 200 });
     }
 
     return NextResponse.json({ received: true }, { status: 200 });
