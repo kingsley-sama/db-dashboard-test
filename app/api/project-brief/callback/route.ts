@@ -34,7 +34,9 @@ export async function POST(request: NextRequest) {
     const { data: threads } = await supabaseAdmin
       .from('brief_conversations')
       .select('entries')
-      .contains('entries', [{ job_id }])
+      // Stringified: a JS array would be sent as a Postgres array literal,
+      // not as the JSON that jsonb containment expects.
+      .contains('entries', JSON.stringify([{ job_id }]))
       .limit(1);
     const existingEntry = (threads?.[0]?.entries as any[] | undefined)?.find(
       (e) => e.job_id === job_id

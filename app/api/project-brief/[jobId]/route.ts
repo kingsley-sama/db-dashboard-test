@@ -11,7 +11,9 @@ async function findEntry(userEmail: string, jobId: string) {
     .from('brief_conversations')
     .select('project_id, project_name, entries')
     .eq('user_email', userEmail)
-    .contains('entries', [{ job_id: jobId }])
+    // Stringified on purpose: given a JS array, supabase-js emits a Postgres
+    // array literal (cs.{...}) instead of JSON, which jsonb containment rejects.
+    .contains('entries', JSON.stringify([{ job_id: jobId }]))
     .limit(1);
 
   if (error) throw new Error(error.message);
