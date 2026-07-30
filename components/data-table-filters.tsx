@@ -1,8 +1,12 @@
 "use client"
 
-import { ChevronDown } from "lucide-react"
+import { CalendarDays, ChevronDown } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
+import type { CSSProperties } from "react"
+import type { DateRange } from "react-day-picker"
+
+import { Calendar } from "@/components/ui/calendar"
 
 // ---------------------------------------------------------------------------
 // Shared per-column filter primitives used by the orders and projects tables.
@@ -11,7 +15,8 @@ import { createPortal } from "react-dom"
 //   - "text"    free-text "contains" match (default)
 //   - "multi"   multi-select dropdown of distinct values (pick any number)
 //   - "numeric" comparison (=, >, <, >=, <=) against the amount in the cell
-//   - "date"    single date or range, typed as mm/dd/yy or mm/dd/yy-mm/dd/yy
+//   - "date"    single date or range, chosen from a calendar picker (stored as
+//               mm/dd/yy or mm/dd/yy-mm/dd/yy so older typed filters still parse)
 // ---------------------------------------------------------------------------
 
 export type NumericOp = "=" | ">" | "<" | ">=" | "<="
@@ -283,6 +288,56 @@ export function NumericFilter({
   )
 }
 
+// --- Date picker -----------------------------------------------------------
+
+const pad2 = (n: number) => String(n).padStart(2, "0")
+
+// Serialize back into the mm/dd/yy text the filter logic already understands.
+const formatDate = (d: Date) => `${pad2(d.getMonth() + 1)}/${pad2(d.getDate())}/${pad2(d.getFullYear() % 100)}`
+
+const serializeRange = (from: Date | null, to: Date | null): string => {
+  if (!from && !to) return ""
+  if (from && to) return startOfDay(from) === startOfDay(to) ? formatDate(from) : `${formatDate(from)}-${formatDate(to)}`
+  if (from) return `${formatDate(from)}-`
+  return `-${formatDate(to!)}`
+}
+
+const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
+
+// Quick ranges, resolved against "today" when the panel is opened.
+const PRESETS: { label: string; range: (today: Date) => { from: Date; to: Date } }[] = [
+  { label: "Today", range: (t) => ({ from: t, to: t }) },
+  { label: "Yesterday", range: (t) => ({ from: addDays(t, -1), to: addDays(t, -1) }) },
+  { label: "Last 7 days", range: (t) => ({ from: addDays(t, -6), to: t }) },
+  { label: "Last 30 days", range: (t) => ({ from: addDays(t, -29), to: t }) },
+  {
+    label: "This month",
+    range: (t) => ({ from: new Date(t.getFullYear(), t.getMonth(), 1), to: t }),
+  },
+  {
+    label: "Last month",
+    range: (t) => ({
+      from: new Date(t.getFullYear(), t.getMonth() - 1, 1),
+      to: new Date(t.getFullYear(), t.getMonth(), 0),
+    }),
+  },
+  {
+    label: "This year",
+    range: (t) => ({ from: new Date(t.getFullYear(), 0, 1), to: t }),
+  },
+]
+
+const PANEL_WIDTH = 470
+
+// Recolor the shared shadcn calendar to the table's navy palette by overriding
+// the theme tokens it reads (globals.css stores them as bare HSL triplets).
+const calendarTheme = {
+  "--primary": "213 98% 20%", // #012e64 — range ends / single day
+  "--primary-foreground": "0 0% 100%",
+  "--accent": "213 45% 92%", // days between the two ends
+  "--accent-foreground": "213 98% 20%",
+} as CSSProperties
+
 export function DateRangeFilter({
   filter,
   onChange,
@@ -290,16 +345,153 @@ export function DateRangeFilter({
   filter: { text: string }
   onChange: (filter: { kind: "date"; text: string }) => void
 }) {
+  const [open, setOpen] = useState(false)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+
+  const { from, to } = parseDateRange(filter.text)
+  const selected: DateRange | undefined = from || to ? { from: from ?? undefined, to: to ?? undefined } : undefined
+
+  useEffect(() => {
+    if (!open) return
+    const onDocClick = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (panelRef.current?.contains(t) || btnRef.current?.contains(t)) return
+      setOpen(false)
+    }
+    const close = () => setOpen(false)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close()
+    }
+    // Same rationale as MultiSelectFilter: the panel is position:fixed, so any
+    // outside scroll would detach it from its trigger.
+    const onScroll = (e: Event) => {
+      if (panelRef.current?.contains(e.target as Node)) return
+      close()
+    }
+    document.addEventListener("mousedown", onDocClick)
+    document.addEventListener("keydown", onKey)
+    window.addEventListener("resize", close)
+    window.addEventListener("scroll", onScroll, true)
+    return () => {
+      document.removeEventListener("mousedown", onDocClick)
+      document.removeEventListener("keydown", onKey)
+      window.removeEventListener("resize", close)
+      window.removeEventListener("scroll", onScroll, true)
+    }
+  }, [open])
+
+  const toggleOpen = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      // Keep the panel on screen: flip above when it would run off the bottom,
+      // and pull it left when it would run off the right edge.
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - PANEL_WIDTH - 8))
+      const estHeight = 360
+      const top = r.bottom + estHeight > window.innerHeight - 8 ? Math.max(8, r.top - estHeight - 4) : r.bottom + 4
+      setPos({ top, left })
+    }
+    setOpen((o) => !o)
+  }
+
+  const commit = (range: DateRange | undefined) =>
+    onChange({ kind: "date", text: serializeRange(range?.from ?? null, range?.to ?? null) })
+
+  const label = !from && !to ? "All dates" : from && to && startOfDay(from) === startOfDay(to)
+    ? formatDate(from)
+    : `${from ? formatDate(from) : "…"} – ${to ? formatDate(to) : "…"}`
+
+  const today = new Date()
+
   return (
-    <input
-      type="text"
-      inputMode="numeric"
-      value={filter.text}
-      onChange={(e) => onChange({ kind: "date", text: e.target.value })}
-      placeholder="mm/dd/yy-mm/dd/yy"
-      title="Type one date (mm/dd/yy) or a range (mm/dd/yy-mm/dd/yy), e.g. 06/25/26-06/30/26"
-      className={inputClass}
-      style={inputStyle}
-    />
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={toggleOpen}
+        className={`${inputClass} flex items-center gap-1.5 text-left`}
+        style={{ ...inputStyle, color: from || to ? "#012e64" : "#8d9499" }}
+        title="Pick a single date or a date range"
+      >
+        <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: "#8d9499" }} />
+        <span className="truncate flex-1">{label}</span>
+        <ChevronDown className="w-3.5 h-3.5 shrink-0" style={{ color: "#8d9499" }} />
+      </button>
+      {open && pos &&
+        createPortal(
+          <div
+            ref={panelRef}
+            className="fixed z-[60] flex rounded-md shadow-lg bg-white overflow-hidden"
+            style={{ top: pos.top, left: pos.left, width: PANEL_WIDTH, border: "1px solid #cbd5e1" }}
+          >
+            <div className="shrink-0 py-2 flex flex-col" style={{ width: 132, borderRight: "1px solid #e2e8f0" }}>
+              <div
+                className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wide"
+                style={{ color: "#8d9499" }}
+              >
+                Quick ranges
+              </div>
+              {PRESETS.map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => {
+                    const r = p.range(today)
+                    commit(r)
+                    setOpen(false)
+                  }}
+                  className="px-3 py-1.5 text-left text-xs hover:bg-blue-50"
+                  style={{ color: "#012e64" }}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex-1 min-w-0 flex flex-col">
+              <div style={calendarTheme}>
+                <Calendar
+                  mode="range"
+                  selected={selected}
+                  defaultMonth={from ?? to ?? today}
+                  numberOfMonths={1}
+                  captionLayout="dropdown"
+                  startMonth={new Date(2015, 0)}
+                  endMonth={new Date(today.getFullYear() + 2, 11)}
+                  onSelect={(range) => commit(range)}
+                  className="p-3"
+                />
+              </div>
+              <div
+                className="flex items-center justify-between gap-2 px-3 py-2"
+                style={{ borderTop: "1px solid #e2e8f0" }}
+              >
+                <span className="text-xs truncate" style={{ color: from || to ? "#012e64" : "#8d9499" }}>
+                  {from || to ? label : "Click a day, then a second day for a range"}
+                </span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => onChange({ kind: "date", text: "" })}
+                    className="px-2 py-1 rounded text-xs hover:bg-blue-50"
+                    style={{ color: "#8d9499", border: "1px solid #cbd5e1" }}
+                  >
+                    Clear
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOpen(false)}
+                    className="px-2.5 py-1 rounded text-xs text-white"
+                    style={{ backgroundColor: "#012e64" }}
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+    </>
   )
 }

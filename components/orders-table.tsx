@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { usePersistedTableState, fetchAllRows, downloadCsv } from "@/lib/table-utils"
-import { OrdersDataTable } from "@/components/orders-data-table"
+import { OrdersDataTable, type DisplayField } from "@/components/orders-data-table"
 import { CreateOrderDialog } from "@/components/create-order-dialog"
 import { EditOrderDialog } from "@/components/edit-order-dialog"
 import useSWR from "swr"
@@ -25,11 +25,19 @@ export function OrdersTable({
   apiPath = "/api/orders",
   enableCreate = true,
   enableActions = true,
+  fields,
+  searchPlaceholder = "Search by project, order ID, product, supplier, or company name...",
+  noun = "orders",
 }: {
   onOrdersChange?: () => void
   apiPath?: string
   enableCreate?: boolean
   enableActions?: boolean
+  /** Column set to render. Defaults to the orders/all_orders columns. */
+  fields?: DisplayField[]
+  searchPlaceholder?: string
+  /** Plural noun used in the row-count labels. */
+  noun?: string
 }) {
   const [orders, setOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -263,7 +271,7 @@ export function OrdersTable({
             Page {pagination.page} of {pagination.totalPages}
           </div>
           <div className="text-sm" style={{ color: '#5d6b88' }}>
-            ({orders.length} orders on this page)
+            ({orders.length} {noun} on this page)
           </div>
         </div>
         <div className="flex gap-2">
@@ -348,7 +356,7 @@ export function OrdersTable({
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: '#8d9499' }} />
             <Input
               type="text"
-              placeholder="Search by project, order ID, product, supplier, or company name..."
+              placeholder={searchPlaceholder}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10 bg-white"
@@ -437,8 +445,8 @@ export function OrdersTable({
             <div className="text-3xl font-bold" style={{ color: '#012e64' }}>
               {pagination.total.toLocaleString()}
             </div>
-            <div className="text-sm font-medium" style={{ color: '#5d6b88' }}>
-              Total Orders{searchTerm ? ' (filtered)' : ''}
+            <div className="text-sm font-medium capitalize" style={{ color: '#5d6b88' }}>
+              Total {noun}{searchTerm ? ' (filtered)' : ''}
             </div>
           </div>
         </div>
@@ -446,7 +454,7 @@ export function OrdersTable({
         {/* Current Page Info */}
         <div className="flex items-center justify-between text-sm">
           <span style={{ color: '#5d6b88' }}>
-            Showing <span className="font-semibold" style={{ color: '#012e64' }}>{orders.length}</span> orders on this page
+            Showing <span className="font-semibold" style={{ color: '#012e64' }}>{orders.length}</span> {noun} on this page
           </span>
           {pagination.totalPages > 1 && (
             <span style={{ color: '#5d6b88' }}>
@@ -487,6 +495,7 @@ export function OrdersTable({
             onToggleRow={handleToggleRow}
             onToggleAll={handleToggleAll}
             hiddenColumns={hiddenColumns}
+            fields={fields}
           />
         )}
       </div>

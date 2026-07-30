@@ -14,7 +14,14 @@ import {
   matchesNumeric,
 } from "@/components/data-table-filters"
 
-const displayFields = [
+export type DisplayField = {
+  key: string
+  label: string
+  width: string
+  maxWidth?: string
+}
+
+const displayFields: DisplayField[] = [
   { key: "order_id", label: "Order ID", width: "min-w-[140px]" },
   { key: "client_rating", label: "Ranking", width: "min-w-[110px]" },
   { key: "company_name", label: "Company Name", width: "min-w-[180px]", maxWidth: "400px" },
@@ -58,6 +65,19 @@ const selectColumns = new Set([
   "customer_type",
   "deposit",
   "supplier_payment",
+  // project_orders_view: low-cardinality project/order columns (mostly enums)
+  "project_status",
+  "project_type",
+  "construction_type",
+  "property_type",
+  "questionnaire_received",
+  "first_or_next_project",
+  "project_manager",
+  "sales_person",
+  "order_type",
+  "product_type",
+  "sale_type",
+  "product",
 ])
 
 // Amount-style columns get a comparison filter (=, >, <, >=, <=) against the
@@ -71,10 +91,19 @@ const numericColumns = new Set([
   "delay_first_delivery",
   "delay_first_revision",
   "delay_second_revision",
+  // project_orders_view financials
+  "gross_sum",
+  "db_1",
+  "roi",
+  "unit_price",
 ])
 
+// Currency-formatted columns (rendered as "€1,234.00").
+const currencyColumns = new Set(["net_sum", "cost", "gross_sum", "db_1", "unit_price"])
+
 // Date-ish columns get a single date/range filter typed as mm/dd/yy.
-const isDateKey = (key: string) => key.includes("date") || key === "created_at"
+const isDateKey = (key: string) =>
+  key.includes("date") || key === "created_at" || key === "updated_at"
 
 const filterKind = (key: string) =>
   selectColumns.has(key)
@@ -95,6 +124,7 @@ export function OrdersDataTable({
   onToggleRow,
   onToggleAll,
   hiddenColumns,
+  fields = displayFields,
 }: {
   orders: any[]
   onEdit?: (order: any) => void
@@ -105,13 +135,15 @@ export function OrdersDataTable({
   onToggleRow?: (order: any, checked: boolean) => void
   onToggleAll?: (orders: any[], checked: boolean) => void
   hiddenColumns?: string[]
+  /** Column set to render. Defaults to the all_orders/orders columns. */
+  fields?: DisplayField[]
 }) {
   const visibleFields = useMemo(
     () =>
       hiddenColumns?.length
-        ? displayFields.filter((f) => !hiddenColumns.includes(f.key))
-        : displayFields,
-    [hiddenColumns]
+        ? fields.filter((f) => !hiddenColumns.includes(f.key))
+        : fields,
+    [hiddenColumns, fields]
   )
   const scrollRef = useRef<HTMLDivElement>(null)
   const theadRef = useRef<HTMLTableSectionElement>(null)
@@ -201,7 +233,7 @@ export function OrdersDataTable({
 
     if (value === null || value === undefined) return "-"
 
-    if ((key.includes("date") || key === "created_at") && value) {
+    if (isDateKey(key) && value) {
       try {
         return new Date(value).toLocaleDateString()
       } catch {
@@ -215,7 +247,7 @@ export function OrdersDataTable({
         : value
     }
 
-    if (["net_sum", "cost"].includes(key)) {
+    if (currencyColumns.has(key)) {
       return typeof value === "number"
         ? `€${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
         : value
@@ -468,7 +500,13 @@ export function OrdersDataTable({
                 {visibleFields.map((field, i) => {
                   const isFirst = i === 0
                   const cellContent =
-                    field.key === "supplier_payment" ? (
+                    field.key === "supplier_payment" && !onToggleSupplierPayment ? (
+                      // Read-only tables (All Orders, Project Orders) show the
+                      // value as text rather than a checkbox that can't be used.
+                      <span style={{ color: order.supplier_payment ? '#047857' : '#5d6b88', fontWeight: 500 }}>
+                        {order.supplier_payment ? "Yes" : "No"}
+                      </span>
+                    ) : field.key === "supplier_payment" ? (
                       <label className="flex items-center gap-2 cursor-pointer select-none">
                         <input
                           type="checkbox"
