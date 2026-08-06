@@ -23,6 +23,7 @@ export type DisplayField = {
 
 const displayFields: DisplayField[] = [
   { key: "order_id", label: "Order ID", width: "min-w-[140px]" },
+  { key: "order_status", label: "Order Status", width: "min-w-[140px]" },
   { key: "client_rating", label: "Ranking", width: "min-w-[110px]" },
   { key: "company_name", label: "Company Name", width: "min-w-[180px]", maxWidth: "400px" },
   { key: "product_name", label: "Product Name", width: "min-w-[150px]" },
@@ -57,6 +58,7 @@ const displayFields: DisplayField[] = [
 // Columns whose filter is a multi-select dropdown of the distinct values
 // present in the data (pick any number) rather than a free-text "contains" box.
 const selectColumns = new Set([
+  "order_status",
   "client_rating",
   "product_name",
   "PM",
@@ -97,6 +99,16 @@ const numericColumns = new Set([
   "roi",
   "unit_price",
 ])
+
+// Badge colors for order_status, keyed by the labels of the Postgres
+// `order_status` enum. Rows created before the column existed are null and fall
+// back to the plain "-" the other columns use.
+const orderStatusStyles: Record<string, { bg: string; fg: string }> = {
+  "Completed": { bg: "#d1fae5", fg: "#047857" },
+  "In progress": { bg: "#dbeafe", fg: "#1d4ed8" },
+  "Yet to start": { bg: "#e8ecf3", fg: "#5d6b88" },
+  "Blocked": { bg: "#fee2e2", fg: "#b91c1c" },
+}
 
 // Currency-formatted columns (rendered as "€1,234.00").
 const currencyColumns = new Set(["net_sum", "cost", "gross_sum", "db_1", "unit_price"])
@@ -500,7 +512,21 @@ export function OrdersDataTable({
                 {visibleFields.map((field, i) => {
                   const isFirst = i === 0
                   const cellContent =
-                    field.key === "supplier_payment" && !onToggleSupplierPayment ? (
+                    field.key === "order_status" ? (
+                      order.order_status ? (
+                        <span
+                          className="inline-block rounded-full px-2.5 py-1 text-xs font-semibold"
+                          style={{
+                            backgroundColor: orderStatusStyles[order.order_status]?.bg ?? '#e8ecf3',
+                            color: orderStatusStyles[order.order_status]?.fg ?? '#5d6b88',
+                          }}
+                        >
+                          {order.order_status}
+                        </span>
+                      ) : (
+                        "-"
+                      )
+                    ) : field.key === "supplier_payment" && !onToggleSupplierPayment ? (
                       // Read-only tables (All Orders, Project Orders) show the
                       // value as text rather than a checkbox that can't be used.
                       <span style={{ color: order.supplier_payment ? '#047857' : '#5d6b88', fontWeight: 500 }}>

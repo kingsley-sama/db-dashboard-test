@@ -80,6 +80,9 @@ export function EditOrderDialog({
       product_name: formData.product_name || null,
       comments: formData.comments || null,
       order_type: formData.order_type || null,
+      // Postgres enum `order_status` — "" must go back as null, not an empty
+      // string, which the enum type would reject.
+      order_status: formData.order_status || null,
       quantity: formData.quantity ? Number.parseInt(formData.quantity) : null,
       due_delivery_date: formData.due_delivery_date || null,
       delivery_1_date: formData.delivery_1_date || null,
@@ -207,6 +210,22 @@ export function EditOrderDialog({
                   <option value="Internal">Internal</option>
                   <option value="Free of Charge">Free of Charge</option>
                   <option value="Express">Express</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Order Status</label>
+                <select
+                  name="order_status"
+                  value={formData.order_status || ""}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 rounded-md bg-white h-10"
+                  style={{ border: '1px solid #8d9499', color: '#012e64' }}
+                >
+                  <option value="">Select status</option>
+                  <option value="Yet to start">Yet to start</option>
+                  <option value="In progress">In progress</option>
+                  <option value="Blocked">Blocked</option>
+                  <option value="Completed">Completed</option>
                 </select>
               </div>
               <div>
