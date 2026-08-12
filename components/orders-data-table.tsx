@@ -1,7 +1,14 @@
 "use client"
 
-import { Edit2, Trash2, X } from "lucide-react"
+import { Check, ChevronDown, Edit2, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import {
   ColumnFilter,
@@ -11,7 +18,12 @@ import {
   defaultFilter,
   isFilterActive,
 } from "@/components/data-table-filters"
-import { ORDER_STATUS_FALLBACK, ORDER_STATUS_STYLES, type OrderStatus } from "@/lib/order-status"
+import {
+  ORDER_STATUSES,
+  ORDER_STATUS_FALLBACK,
+  ORDER_STATUS_STYLES,
+  type OrderStatus,
+} from "@/lib/order-status"
 
 export type DisplayField = {
   key: string
@@ -124,6 +136,7 @@ export function OrdersDataTable({
   onEdit,
   onDelete,
   onToggleSupplierPayment,
+  onChangeOrderStatus,
   selectable = false,
   selectedIds,
   onToggleRow,
@@ -140,6 +153,8 @@ export function OrdersDataTable({
   onEdit?: (order: any) => void
   onDelete?: (order: any) => void
   onToggleSupplierPayment?: (order: any, value: boolean) => void
+  /** Set on editable tables to make the status cell an inline dropdown. */
+  onChangeOrderStatus?: (order: any, value: string) => void
   selectable?: boolean
   selectedIds?: Set<any>
   onToggleRow?: (order: any, checked: boolean) => void
@@ -499,7 +514,68 @@ export function OrdersDataTable({
                 {visibleFields.map((field, i) => {
                   const isFirst = i === 0
                   const cellContent =
-                    field.key === "order_status" ? (
+                    field.key === "order_status" && onChangeOrderStatus ? (
+                      // Inline editor, mirroring the supplier_payment checkbox.
+                      // The trigger keeps the badge's pill shape and colours so
+                      // the column still scans at a glance; the popup is the
+                      // same Radix menu as the toolbar filter, not a native
+                      // <select> (which the browser styles on its own terms).
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold cursor-pointer transition-opacity hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+                            style={{
+                              backgroundColor: order.order_status
+                                ? ORDER_STATUS_STYLES[order.order_status as OrderStatus]?.bg ??
+                                  ORDER_STATUS_FALLBACK.bg
+                                : 'transparent',
+                              color: order.order_status
+                                ? ORDER_STATUS_STYLES[order.order_status as OrderStatus]?.fg ??
+                                  ORDER_STATUS_FALLBACK.fg
+                                : '#5d6b88',
+                            }}
+                          >
+                            {order.order_status || "-"}
+                            <ChevronDown className="w-3 h-3 opacity-60" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="min-w-[9rem]">
+                          {ORDER_STATUSES.map((status) => (
+                            <DropdownMenuItem
+                              key={status}
+                              onClick={() => onChangeOrderStatus(order, status)}
+                              className="cursor-pointer text-sm"
+                              style={{ color: '#012e64' }}
+                            >
+                              <span
+                                className="w-2.5 h-2.5 rounded-full"
+                                style={{ backgroundColor: ORDER_STATUS_STYLES[status].fg }}
+                              />
+                              {status}
+                              {order.order_status === status && (
+                                <Check className="w-3.5 h-3.5 ml-auto" style={{ color: '#012e64' }} />
+                              )}
+                            </DropdownMenuItem>
+                          ))}
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => onChangeOrderStatus(order, "")}
+                            className="cursor-pointer text-sm"
+                            style={{ color: '#5d6b88' }}
+                          >
+                            <span
+                              className="w-2.5 h-2.5 rounded-full"
+                              style={{ border: '1px solid #8d9499' }}
+                            />
+                            Clear
+                            {!order.order_status && (
+                              <Check className="w-3.5 h-3.5 ml-auto" style={{ color: '#5d6b88' }} />
+                            )}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : field.key === "order_status" ? (
                       order.order_status ? (
                         <span
                           className="inline-block rounded-full px-2.5 py-1 text-xs font-semibold"

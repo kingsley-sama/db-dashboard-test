@@ -349,6 +349,39 @@ export function OrdersTable({
     }
   }
 
+  const handleChangeOrderStatus = async (order: any, value: string) => {
+    const previous = order.order_status ?? null
+    // "" is the "-" option; the Postgres enum rejects an empty string, so it
+    // has to go back as null.
+    const next = value || null
+
+    // Optimistically update local state
+    setOrders((prev) =>
+      prev.map((o) => (o.id === order.id ? { ...o, order_status: next } : o))
+    )
+
+    try {
+      const response = await fetch(`/api/orders/${order.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_status: next })
+      })
+
+      if (!response.ok) {
+        const result = await response.json()
+        throw new Error(result.error || 'Failed to update order status')
+      }
+
+      onOrdersChange?.()
+    } catch (err: any) {
+      // Revert on failure
+      setOrders((prev) =>
+        prev.map((o) => (o.id === order.id ? { ...o, order_status: previous } : o))
+      )
+      setError(err.message)
+    }
+  }
+
   const handleDeleteOrder = async () => {
     if (!deletingOrder) return
     setDeleteLoading(true)
@@ -645,6 +678,7 @@ export function OrdersTable({
             onEdit={enableActions ? setEditingOrder : undefined}
             onDelete={enableActions && canDelete ? setDeletingOrder : undefined}
             onToggleSupplierPayment={enableActions ? handleToggleSupplierPayment : undefined}
+            onChangeOrderStatus={enableActions ? handleChangeOrderStatus : undefined}
             selectable={selectMode}
             selectedIds={new Set(selectedRows.keys())}
             onToggleRow={handleToggleRow}
