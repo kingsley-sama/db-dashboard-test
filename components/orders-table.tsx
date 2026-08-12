@@ -1,10 +1,10 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Plus, Search, RefreshCw, ChevronLeft, ChevronRight, Download, Loader2, CheckSquare } from "lucide-react"
+import { Plus, Search, RefreshCw, ChevronLeft, ChevronRight, Download, Loader2, CheckSquare, Filter } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,11 +12,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { usePersistedTableState, fetchAllRows, downloadCsv } from "@/lib/table-utils"
+import { serializeColumnFilters, type ColumnFilter } from "@/lib/column-filters"
 import { OrdersDataTable, type DisplayField } from "@/components/orders-data-table"
 import { CreateOrderDialog } from "@/components/create-order-dialog"
 import { EditOrderDialog } from "@/components/edit-order-dialog"
 import useSWR from "swr"
 import { User } from "@/lib/db/schema"
+import { ORDER_STATUSES, ORDER_STATUS_STYLES, type OrderStatus } from "@/lib/order-status"
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
 
@@ -28,6 +30,9 @@ export function OrdersTable({
   fields,
   searchPlaceholder = "Search by project, order ID, product, supplier, or company name...",
   noun = "orders",
+  statusFilter: statusFilterProp,
+  onStatusFilterChange,
+  onActiveFiltersChange,
 }: {
   onOrdersChange?: () => void
   apiPath?: string
@@ -38,6 +43,17 @@ export function OrdersTable({
   searchPlaceholder?: string
   /** Plural noun used in the row-count labels. */
   noun?: string
+  /**
+   * Order status drill-down. Pass both props to share the state with the
+   * dashboard tiles; omit them and the toolbar dropdown owns it locally.
+   */
+  statusFilter?: string
+  onStatusFilterChange?: (status: string) => void
+  /**
+   * Reports the search box and column filters the table is currently applying,
+   * so sibling widgets (the status tiles) can count the same rows.
+   */
+  onActiveFiltersChange?: (filters: { search: string; columnFilters: string }) => void
 }) {
   const [orders, setOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -47,9 +63,39 @@ export function OrdersTable({
   // survive changing pages, search, or column filters.
   const [selectMode, setSelectMode] = useState(false)
   const [selectedRows, setSelectedRows] = useState<Map<any, any>>(new Map())
-  // Search/page persist per table (orders vs all-orders) and restore on return
-  const { searchTerm, setSearchTerm, currentPage, setCurrentPage, ready } =
-    usePersistedTableState(`table-state:${apiPath}`)
+  // Search/status/page persist per table (orders vs all-orders) and restore on return
+  const {
+    searchTerm,
+    setSearchTerm,
+    statusFilter: persistedStatus,
+    setStatusFilter: setPersistedStatus,
+    columnFilters,
+    setColumnFilters,
+    currentPage,
+    setCurrentPage,
+    ready,
+  } = usePersistedTableState(`table-state:${apiPath}`)
+  // Controlled by the page (tiles) when both props are supplied, otherwise the
+  // persisted state above backs the toolbar dropdown on its own.
+  const controlled = statusFilterProp !== undefined && onStatusFilterChange !== undefined
+  const statusFilter = controlled ? statusFilterProp! : persistedStatus
+  const setStatusFilter = (value: string) => {
+    setCurrentPage(1)
+    setPersistedStatus(value)
+    onStatusFilterChange?.(value)
+  }
+
+  // Storage stays the single source even when the page owns the state: hand the
+  // restored status back up once, then keep it mirrored as the parent changes it.
+  useEffect(() => {
+    if (!ready || !controlled) return
+    if (persistedStatus && !statusFilterProp) onStatusFilterChange!(persistedStatus)
+  }, [ready])
+
+  useEffect(() => {
+    if (!ready || !controlled) return
+    if (statusFilterProp !== persistedStatus) setPersistedStatus(statusFilterProp!)
+  }, [statusFilterProp])
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [editingOrder, setEditingOrder] = useState<any>(null)
   const [deletingOrder, setDeletingOrder] = useState<any>(null)
@@ -68,11 +114,36 @@ export function OrdersTable({
     totalPages: 0
   })
 
-  // Fetch orders when page, search, or filter changes (once saved state is restored)
+  // Column filters go to the API alongside the search box, so they narrow the
+  // whole table rather than just the rows already loaded.
+  const serializedFilters = useMemo(() => serializeColumnFilters(columnFilters), [columnFilters])
+
+  // Typing in a filter or the search box shouldn't fire a query per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState(searchTerm)
+  const [debouncedFilters, setDebouncedFilters] = useState(serializedFilters)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm)
+      setDebouncedFilters(serializedFilters)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchTerm, serializedFilters])
+
+  const settled = debouncedSearch === searchTerm && debouncedFilters === serializedFilters
+
+  // Publish the debounced values so the tiles refetch on the same cadence.
   useEffect(() => {
     if (!ready) return
+    onActiveFiltersChange?.({ search: debouncedSearch, columnFilters: debouncedFilters })
+  }, [ready, debouncedSearch, debouncedFilters])
+
+  // Fetch orders when page, search, or filter changes (once saved state is
+  // restored). Waiting for `settled` keeps the restored state from firing an
+  // extra request with the pre-restore values.
+  useEffect(() => {
+    if (!ready || !settled) return
     fetchOrders(currentPage)
-  }, [ready, currentPage, searchTerm])
+  }, [ready, settled, currentPage, debouncedSearch, statusFilter, debouncedFilters])
 
   const fetchOrders = async (page = 1) => {
     setLoading(true)
@@ -82,8 +153,10 @@ export function OrdersTable({
         page: page.toString(),
         limit: '500',
       })
-      
+
       if (searchTerm) params.append('search', searchTerm)
+      if (statusFilter) params.append('status', statusFilter)
+      if (serializedFilters) params.append('columnFilters', serializedFilters)
 
       const response = await fetch(`${apiPath}?${params.toString()}`)
       const result = await response.json()
@@ -106,6 +179,39 @@ export function OrdersTable({
   // Note: Search and filter are now handled on the backend across all data.
   // Changing the search resets to page 1 inside usePersistedTableState.
 
+  // Distinct values for the multi-select column filters. Fetched per column the
+  // first time its dropdown opens — the whole table's values, not just the
+  // loaded page's — and kept for the life of the mounted table.
+  const [filterOptions, setFilterOptions] = useState<Record<string, string[]>>({})
+  const requestedOptions = useRef<Set<string>>(new Set())
+
+  const handleRequestFilterOptions = useCallback(
+    async (column: string) => {
+      if (requestedOptions.current.has(column)) return
+      requestedOptions.current.add(column)
+      try {
+        const response = await fetch(
+          `${apiPath}/filter-options?column=${encodeURIComponent(column)}`
+        )
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error || "Failed to load filter options")
+        setFilterOptions((prev) => ({ ...prev, [column]: result.values || [] }))
+      } catch {
+        // Leave the dropdown empty and allow a retry on the next open.
+        requestedOptions.current.delete(column)
+      }
+    },
+    [apiPath]
+  )
+
+  // Options are scoped to one table; drop them if the endpoint changes.
+  useEffect(() => {
+    requestedOptions.current = new Set()
+    setFilterOptions({})
+  }, [apiPath])
+
+  const hasFilters = Boolean(searchTerm || statusFilter || serializedFilters)
+
   const handleExportCsv = async (scope: "filtered" | "all" | "selected") => {
     setExporting(true)
     setError("")
@@ -113,14 +219,27 @@ export function OrdersTable({
       const rows =
         scope === "selected"
           ? Array.from(selectedRows.values())
-          : await fetchAllRows(apiPath, scope === "filtered" ? searchTerm : undefined)
+          : await fetchAllRows(
+              apiPath,
+              scope === "filtered"
+                ? {
+                    search: searchTerm,
+                    status: statusFilter,
+                    columnFilters: serializedFilters,
+                  }
+                : {}
+            )
       if (rows.length === 0) {
         setError("Nothing to export")
         return
       }
       const table = apiPath.split("/").pop() || "orders"
       const suffix =
-        scope === "selected" ? "_selected" : scope === "filtered" && searchTerm ? "_filtered" : ""
+        scope === "selected"
+          ? "_selected"
+          : scope === "filtered" && hasFilters
+          ? "_filtered"
+          : ""
       downloadCsv(rows, `${table}${suffix}_${new Date().toISOString().slice(0, 10)}.csv`)
     } catch (err: any) {
       setError(err.message)
@@ -364,8 +483,41 @@ export function OrdersTable({
             />
           </div>
           <div className="flex gap-2">
-            <Button 
-              onClick={() => fetchOrders(currentPage)} 
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="whitespace-nowrap hover:bg-gray-50"
+                  style={{ borderColor: '#8d9499', color: '#012e64' }}
+                >
+                  {statusFilter ? (
+                    <span
+                      className="w-2.5 h-2.5 rounded-full mr-2"
+                      style={{ backgroundColor: ORDER_STATUS_STYLES[statusFilter as OrderStatus]?.fg }}
+                    />
+                  ) : (
+                    <Filter className="w-4 h-4 mr-2" />
+                  )}
+                  {statusFilter || 'All statuses'}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setStatusFilter("")}>
+                  All statuses
+                </DropdownMenuItem>
+                {ORDER_STATUSES.map((status) => (
+                  <DropdownMenuItem key={status} onClick={() => setStatusFilter(status)}>
+                    <span
+                      className="w-2.5 h-2.5 rounded-full mr-2"
+                      style={{ backgroundColor: ORDER_STATUS_STYLES[status].fg }}
+                    />
+                    {status}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button
+              onClick={() => fetchOrders(currentPage)}
               variant="outline"
               className="hover:bg-gray-50"
               style={{ borderColor: '#8d9499', color: '#012e64' }}
@@ -415,9 +567,9 @@ export function OrdersTable({
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => handleExportCsv("filtered")}
-                  disabled={!searchTerm}
+                  disabled={!hasFilters}
                 >
-                  Filtered rows{searchTerm ? ` (${pagination.total.toLocaleString()})` : ''}
+                  Filtered rows{hasFilters ? ` (${pagination.total.toLocaleString()})` : ''}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleExportCsv("all")}>
                   All rows
@@ -446,7 +598,7 @@ export function OrdersTable({
               {pagination.total.toLocaleString()}
             </div>
             <div className="text-sm font-medium capitalize" style={{ color: '#5d6b88' }}>
-              Total {noun}{searchTerm ? ' (filtered)' : ''}
+              Total {noun}{hasFilters ? ' (filtered)' : ''}
             </div>
           </div>
         </div>
@@ -477,7 +629,7 @@ export function OrdersTable({
               <p style={{ color: '#5d6b88' }}>Loading orders...</p>
             </div>
           </div>
-        ) : orders.length === 0 ? (
+        ) : orders.length === 0 && !serializedFilters ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
               <p className="text-lg font-medium" style={{ color: '#012e64' }}>No orders found</p>
@@ -485,6 +637,9 @@ export function OrdersTable({
             </div>
           </div>
         ) : (
+          // With column filters active the table stays mounted even with no
+          // rows: the filter inputs live in its header, so hiding it would
+          // strand the user with no way to clear them.
           <OrdersDataTable
             orders={orders}
             onEdit={enableActions ? setEditingOrder : undefined}
@@ -496,6 +651,11 @@ export function OrdersTable({
             onToggleAll={handleToggleAll}
             hiddenColumns={hiddenColumns}
             fields={fields}
+            columnFilters={columnFilters}
+            onColumnFiltersChange={setColumnFilters}
+            filterOptions={filterOptions}
+            onRequestFilterOptions={handleRequestFilterOptions}
+            totalRows={pagination.total}
           />
         )}
       </div>

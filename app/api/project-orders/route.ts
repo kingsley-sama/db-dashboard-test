@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/my-app-auth';
 import { supabaseAdmin } from '@/lib/supabase';
+import {
+  PROJECT_ORDERS_FILTER_COLUMNS,
+  applyColumnFilters,
+  buildSearchFilter,
+  parseColumnFilters,
+} from '@/lib/column-filters';
 
 // Text columns of project_orders_view that the search box matches against.
 // Several view columns (PM, project_status, project_type, construction_type,
@@ -22,9 +28,6 @@ const SEARCH_COLUMNS = [
   'client_rating',
 ];
 
-const buildSearchFilter = (search: string) =>
-  SEARCH_COLUMNS.map((column) => `${column}.ilike.%${search}%`).join(',');
-
 // GET /api/project-orders — read-only feed of project_orders_view (projects
 // left-joined to all_orders). There is no POST/PUT/DELETE: the view is a
 // reporting surface, and writes belong on /api/projects and /api/orders.
@@ -45,25 +48,31 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '500');
     const offset = (page - 1) * limit;
     const search = searchParams.get('search') || '';
+    // Per-column header filters. Unknown columns are dropped by the whitelist.
+    const columnFilters = parseColumnFilters(
+      searchParams.get('columnFilters'),
+      PROJECT_ORDERS_FILTER_COLUMNS
+    );
 
-    let countQuery = supabaseAdmin
-      .from('project_orders_view')
-      .select('id', { count: 'exact', head: true });
-    if (search) {
-      countQuery = countQuery.or(buildSearchFilter(search));
-    }
+    // One filter chain, applied identically to the count and the data query —
+    // they must agree or the row total contradicts the rows on screen.
+    const buildQuery = (columns: string, options?: { count: 'exact'; head: true }) => {
+      let query = supabaseAdmin.from('project_orders_view').select(columns, options);
+      if (search) {
+        query = query.or(buildSearchFilter(SEARCH_COLUMNS, search));
+      }
+      return applyColumnFilters(query, columnFilters, PROJECT_ORDERS_FILTER_COLUMNS);
+    };
 
-    const { count, error: countError } = await countQuery;
+    const { count, error: countError } = await buildQuery('id', {
+      count: 'exact',
+      head: true,
+    });
     if (countError) {
       return NextResponse.json({ error: countError.message }, { status: 500 });
     }
 
-    let dataQuery = supabaseAdmin.from('project_orders_view').select('*');
-    if (search) {
-      dataQuery = dataQuery.or(buildSearchFilter(search));
-    }
-
-    const { data, error } = await dataQuery
+    const { data, error } = await buildQuery('*')
       .order('created_at', { ascending: false })
       .order('order_pk', { ascending: true })
       .range(offset, offset + limit - 1);
@@ -77,7 +86,7 @@ export async function GET(request: NextRequest) {
     // selection by `id`, so give every row a unique composite key and keep the
     // originals under explicit names. Projects with no orders have a null
     // order_pk.
-    const rows = (data || []).map((row) => ({
+    const rows = (data || []).map((row: any) => ({
       ...row,
       id: `${row.id}-${row.order_pk ?? 'none'}`,
       project_pk: row.id,

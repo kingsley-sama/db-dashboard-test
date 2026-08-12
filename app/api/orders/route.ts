@@ -1,6 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/my-app-auth';
 import { supabaseAdmin } from '@/lib/supabase';
+import {
+  ORDERS_FILTER_COLUMNS,
+  applyColumnFilters,
+  buildSearchFilter,
+  needsInnerJoin,
+  parseColumnFilters,
+} from '@/lib/column-filters';
+
+// Text columns the search box matches against.
+const SEARCH_COLUMNS = [
+  'project_id',
+  'order_id',
+  'product',
+  'product_name',
+  'supplier',
+  'order_number',
+  'company_name',
+];
 
 // GET /api/orders - Fetch all orders with pagination and search
 export async function GET(request: NextRequest) {
@@ -20,95 +38,72 @@ export async function GET(request: NextRequest) {
     const filterType = searchParams.get('filterType') || '';
     const filterPM = searchParams.get('filterPM') || '';
     const filterPmType = searchParams.get('filterPmType') || '';
+    // Order status drill-down from the dashboard tiles / toolbar dropdown.
+    const filterStatus = searchParams.get('status') || '';
+    // Per-column header filters. Unknown columns are dropped by the whitelist.
+    const columnFilters = parseColumnFilters(
+      searchParams.get('columnFilters'),
+      ORDERS_FILTER_COLUMNS
+    );
 
     // APMs must not see orders belonging to completed projects: switch the
     // projects join to an inner join and require no completion date. (This also
     // hides orders with no matching project row from APMs.)
     const isApm = user.role === 'apm';
-    const projectJoin = isApm
-      ? 'projects!inner(delivery_completion_date, project_name, client_contact_name, company_email)'
-      : 'projects(delivery_completion_date, project_name, client_contact_name, company_email)';
+    // customer_name/customer_email/project_name are served from the joined
+    // project row, and PostgREST only *drops* rows on an embedded filter when
+    // the join is inner — otherwise it just nulls the embed and the row stays.
+    const filtersProject = needsInnerJoin(columnFilters, ORDERS_FILTER_COLUMNS, 'projects');
+    const projectJoin =
+      isApm || filtersProject
+        ? 'projects!inner(delivery_completion_date, project_name, client_contact_name, company_email)'
+        : 'projects(delivery_completion_date, project_name, client_contact_name, company_email)';
 
-    // Build query with filters - join with projects for delivery_completion_date and project_name
-    let query = supabaseAdmin.from('orders').select(`*, ${projectJoin}`, { count: 'exact' });
-    if (isApm) {
-      // The end date lives in two places that can disagree: the project's
-      // delivery_completion_date and the order's own project_completion_date.
-      // A project counts as ended if either is set.
-      query = query
-        .is('projects.delivery_completion_date', null)
-        .is('project_completion_date', null);
-    }
+    // One filter chain, applied identically to the count and the data query —
+    // they must agree or the row total contradicts the rows on screen.
+    const buildQuery = (options?: { count: 'exact'; head: true }) => {
+      let query = supabaseAdmin
+        .from('orders')
+        .select(`*, ${projectJoin}`, options);
 
-    // Apply search filter across multiple fields
-    if (search) {
-      query = query.or(
-        `project_id.ilike.%${search}%,` +
-        `order_id.ilike.%${search}%,` +
-        `product.ilike.%${search}%,` +
-        `product_name.ilike.%${search}%,` +
-        `supplier.ilike.%${search}%,` +
-        `order_number.ilike.%${search}%,` +
-        `company_name.ilike.%${search}%`
-      );
-    }
+      // Role gating first: user-supplied filters may only narrow this further.
+      if (isApm) {
+        // The end date lives in two places that can disagree: the project's
+        // delivery_completion_date and the order's own project_completion_date.
+        // A project counts as ended if either is set.
+        query = query
+          .is('projects.delivery_completion_date', null)
+          .is('project_completion_date', null);
+      }
 
-    // Apply order type filter
-    if (filterType) {
-      query = query.eq('order_type', filterType);
-    }
+      if (search) {
+        query = query.or(buildSearchFilter(SEARCH_COLUMNS, search));
+      }
+      if (filterType) {
+        query = query.eq('order_type', filterType);
+      }
+      if (filterPM) {
+        query = query.eq('PM', filterPM);
+      }
+      if (filterPmType) {
+        query = query.eq('pm_type', filterPmType);
+      }
+      if (filterStatus) {
+        query = query.eq('order_status', filterStatus);
+      }
 
-    // Apply PM filter
-    if (filterPM) {
-      query = query.eq('PM', filterPM);
-    }
+      return applyColumnFilters(query, columnFilters, ORDERS_FILTER_COLUMNS);
+    };
 
-    // Apply PM type filter
-    if (filterPmType) {
-      query = query.eq('pm_type', filterPmType);
-    }
-
-    // Get total count with filters applied
-    const { count, error: countError } = await query;
+    // Count only — `head` skips transferring the rows, which the previous
+    // version pulled twice over.
+    const { count, error: countError } = await buildQuery({ count: 'exact', head: true });
 
     if (countError) {
       return NextResponse.json({ error: countError.message }, { status: 500 });
     }
 
-    // Fetch paginated data with filters - join with projects for delivery_completion_date and project_name
-    let dataQuery = supabaseAdmin.from('orders').select(`*, ${projectJoin}`);
-    if (isApm) {
-      dataQuery = dataQuery
-        .is('projects.delivery_completion_date', null)
-        .is('project_completion_date', null);
-    }
-
-    // Apply same filters to data query
-    if (search) {
-      dataQuery = dataQuery.or(
-        `project_id.ilike.%${search}%,` +
-        `order_id.ilike.%${search}%,` +
-        `product.ilike.%${search}%,` +
-        `product_name.ilike.%${search}%,` +
-        `supplier.ilike.%${search}%,` +
-        `order_number.ilike.%${search}%,` +
-        `company_name.ilike.%${search}%`
-      );
-    }
-
-    if (filterType) {
-      dataQuery = dataQuery.eq('order_type', filterType);
-    }
-
-    if (filterPM) {
-      dataQuery = dataQuery.eq('PM', filterPM);
-    }
-
-    if (filterPmType) {
-      dataQuery = dataQuery.eq('pm_type', filterPmType);
-    }
-
-    const { data, error } = await dataQuery
+    const { data, error } = await buildQuery()
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 

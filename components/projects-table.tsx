@@ -82,7 +82,10 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
       const rows =
         scope === "selected"
           ? Array.from(selectedRows.values())
-          : await fetchAllRows("/api/projects", scope === "filtered" ? searchTerm : undefined)
+          : await fetchAllRows(
+              "/api/projects",
+              scope === "filtered" ? { search: searchTerm } : {}
+            )
       if (rows.length === 0) {
         setError("Nothing to export")
         return

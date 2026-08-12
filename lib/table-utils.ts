@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import type { ColumnFilter } from "@/lib/column-filters"
 
 /**
  * Persists a table's search/filter state to localStorage (per storageKey) so it
@@ -10,6 +11,8 @@ import { useEffect, useState } from "react"
  */
 export function usePersistedTableState(storageKey: string) {
   const [searchTerm, setSearchTermState] = useState("")
+  const [statusFilter, setStatusFilterState] = useState("")
+  const [columnFilters, setColumnFiltersState] = useState<Record<string, ColumnFilter>>({})
   const [currentPage, setCurrentPage] = useState(1)
   const [ready, setReady] = useState(false)
 
@@ -19,7 +22,12 @@ export function usePersistedTableState(storageKey: string) {
       if (raw) {
         const saved = JSON.parse(raw)
         if (typeof saved.search === "string") setSearchTermState(saved.search)
+        if (typeof saved.status === "string") setStatusFilterState(saved.status)
         if (typeof saved.page === "number" && saved.page > 0) setCurrentPage(saved.page)
+        // Absent in state saved before column filters were persisted.
+        if (saved.columnFilters && typeof saved.columnFilters === "object") {
+          setColumnFiltersState(saved.columnFilters)
+        }
       }
     } catch {
       // corrupted saved state — start fresh
@@ -32,12 +40,17 @@ export function usePersistedTableState(storageKey: string) {
     try {
       localStorage.setItem(
         storageKey,
-        JSON.stringify({ search: searchTerm, page: currentPage })
+        JSON.stringify({
+          search: searchTerm,
+          status: statusFilter,
+          page: currentPage,
+          columnFilters,
+        })
       )
     } catch {
       // storage full/unavailable — persistence is best-effort
     }
-  }, [ready, storageKey, searchTerm, currentPage])
+  }, [ready, storageKey, searchTerm, statusFilter, currentPage, columnFilters])
 
   // Changing the search always jumps back to page 1
   const setSearchTerm = (value: string) => {
@@ -45,21 +58,50 @@ export function usePersistedTableState(storageKey: string) {
     setCurrentPage(1)
   }
 
-  return { searchTerm, setSearchTerm, currentPage, setCurrentPage, ready }
+  // Same for the order-status drill-down
+  const setStatusFilter = (value: string) => {
+    setStatusFilterState(value)
+    setCurrentPage(1)
+  }
+
+  // And for the per-column filters, whose result set is now server-wide.
+  const setColumnFilters = (value: Record<string, ColumnFilter>) => {
+    setColumnFiltersState(value)
+    setCurrentPage(1)
+  }
+
+  return {
+    searchTerm,
+    setSearchTerm,
+    statusFilter,
+    setStatusFilter,
+    columnFilters,
+    setColumnFilters,
+    currentPage,
+    setCurrentPage,
+    ready,
+  }
 }
 
 /**
- * Fetches every row from a paginated API endpoint (page/limit/search params,
- * {data, pagination} response shape) by walking all pages.
+ * Fetches every row from a paginated API endpoint (page/limit/search/status/
+ * columnFilters params, {data, pagination} response shape) by walking all pages.
+ * The filters must match the ones the table is showing, or an export of
+ * "filtered rows" would quietly contain more than the user can see.
  */
-export async function fetchAllRows(apiPath: string, search?: string): Promise<any[]> {
+export async function fetchAllRows(
+  apiPath: string,
+  filters: { search?: string; status?: string; columnFilters?: string } = {}
+): Promise<any[]> {
   const limit = 1000
   const all: any[] = []
   let page = 1
 
   while (true) {
     const params = new URLSearchParams({ page: page.toString(), limit: limit.toString() })
-    if (search) params.append("search", search)
+    if (filters.search) params.append("search", filters.search)
+    if (filters.status) params.append("status", filters.status)
+    if (filters.columnFilters) params.append("columnFilters", filters.columnFilters)
 
     const response = await fetch(`${apiPath}?${params.toString()}`)
     const result = await response.json()

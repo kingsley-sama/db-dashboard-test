@@ -10,9 +10,8 @@ import {
   NumericFilter,
   defaultFilter,
   isFilterActive,
-  matchesDate,
-  matchesNumeric,
 } from "@/components/data-table-filters"
+import { ORDER_STATUS_FALLBACK, ORDER_STATUS_STYLES, type OrderStatus } from "@/lib/order-status"
 
 export type DisplayField = {
   key: string
@@ -100,15 +99,9 @@ const numericColumns = new Set([
   "unit_price",
 ])
 
-// Badge colors for order_status, keyed by the labels of the Postgres
-// `order_status` enum. Rows created before the column existed are null and fall
-// back to the plain "-" the other columns use.
-const orderStatusStyles: Record<string, { bg: string; fg: string }> = {
-  "Completed": { bg: "#d1fae5", fg: "#047857" },
-  "In progress": { bg: "#dbeafe", fg: "#1d4ed8" },
-  "Yet to start": { bg: "#e8ecf3", fg: "#5d6b88" },
-  "Blocked": { bg: "#fee2e2", fg: "#b91c1c" },
-}
+// Badge colors for order_status live in lib/order-status.ts, shared with the
+// create/edit dialogs and the dashboard tiles. Rows created before the column
+// existed are null and fall back to the plain "-" the other columns use.
 
 // Currency-formatted columns (rendered as "€1,234.00").
 const currencyColumns = new Set(["net_sum", "cost", "gross_sum", "db_1", "unit_price"])
@@ -137,6 +130,11 @@ export function OrdersDataTable({
   onToggleAll,
   hiddenColumns,
   fields = displayFields,
+  columnFilters,
+  onColumnFiltersChange,
+  filterOptions = {},
+  onRequestFilterOptions,
+  totalRows,
 }: {
   orders: any[]
   onEdit?: (order: any) => void
@@ -149,6 +147,18 @@ export function OrdersDataTable({
   hiddenColumns?: string[]
   /** Column set to render. Defaults to the all_orders/orders columns. */
   fields?: DisplayField[]
+  /**
+   * Per-column filters are owned by the parent and sent to the API, so they
+   * apply across the whole table rather than just the loaded page.
+   */
+  columnFilters: Record<string, ColumnFilter>
+  onColumnFiltersChange: (filters: Record<string, ColumnFilter>) => void
+  /** Distinct values per column, fetched from the server. */
+  filterOptions?: Record<string, string[]>
+  /** Called when a dropdown opens, so the parent can load its options. */
+  onRequestFilterOptions?: (column: string) => void
+  /** Server-wide row count for the active filters. */
+  totalRows?: number
 }) {
   const visibleFields = useMemo(
     () =>
@@ -272,57 +282,20 @@ export function OrdersDataTable({
     return value
   }
 
-  // Per-column filters. Text/multi/numeric columns filter against the
-  // *displayed* value, so what the user types/picks matches what they see in
-  // the cell (formatted "€" amounts, "Yes"/"No", computed margins, etc.).
-  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilter>>({})
+  // Per-column filters. These are applied by the API against the raw column
+  // values, so they match every row in the table rather than only the loaded
+  // page. Note that means they compare the *stored* value, not the formatted
+  // cell text — see the caveats on profit_margin/supplier_payment below.
   const getFilter = (key: string): ColumnFilter =>
     columnFilters[key] ?? defaultFilter(filterKind(key))
   const setColumnFilter = (key: string, filter: ColumnFilter) =>
-    setColumnFilters((prev) => ({ ...prev, [key]: filter }))
-  const clearFilters = () => setColumnFilters({})
+    onColumnFiltersChange({ ...columnFilters, [key]: filter })
+  const clearFilters = () => onColumnFiltersChange({})
   const activeFilterCount = Object.values(columnFilters).filter(isFilterActive).length
 
-  // Distinct values for dropdown columns, derived from the loaded rows.
-  const filterOptions = useMemo(() => {
-    const map: Record<string, string[]> = {}
-    for (const field of visibleFields) {
-      if (!selectColumns.has(field.key)) continue
-      const set = new Set<string>()
-      for (const order of orders) {
-        const formatted = String(formatValue(order[field.key], field.key, order) ?? "")
-        if (formatted && formatted !== "-") set.add(formatted)
-      }
-      map[field.key] = Array.from(set).sort((a, b) =>
-        a.localeCompare(b, undefined, { numeric: true })
-      )
-    }
-    return map
-  }, [orders])
-
-  const filteredOrders = useMemo(() => {
-    const active = Object.entries(columnFilters).filter(([, f]) => isFilterActive(f))
-    if (active.length === 0) return orders
-    return orders.filter((order) =>
-      active.every(([key, filter]) => {
-        const display = String(formatValue(order[key], key, order) ?? "")
-        switch (filter.kind) {
-          case "multi":
-            return filter.values.includes(display)
-          case "numeric":
-            return matchesNumeric(display, filter)
-          case "date":
-            return matchesDate(order[key], filter)
-          default:
-            return display.toLowerCase().includes(filter.value.trim().toLowerCase())
-        }
-      })
-    )
-  }, [orders, columnFilters])
-
-  // Select-all applies to the rows visible under the current column filters
+  // Select-all applies to the rows on the current page.
   const allFilteredSelected =
-    filteredOrders.length > 0 && filteredOrders.every((o) => selectedIds?.has(o.id))
+    orders.length > 0 && orders.every((o) => selectedIds?.has(o.id))
 
   const renderHeaderCells = (fixedWidths: boolean) => (
     <tr style={{ borderBottom: '2px solid #e5e5e5' }}>
@@ -353,7 +326,7 @@ export function OrdersDataTable({
                 <input
                   type="checkbox"
                   checked={allFilteredSelected}
-                  onChange={(e) => onToggleAll?.(filteredOrders, e.target.checked)}
+                  onChange={(e) => onToggleAll?.(orders, e.target.checked)}
                   title="Select all rows on this page (matching filters)"
                   className="h-4 w-4 cursor-pointer"
                   style={{ accentColor: '#012e64' }}
@@ -414,6 +387,7 @@ export function OrdersDataTable({
                 options={filterOptions[field.key] ?? []}
                 values={filter.values}
                 onChange={(values) => setColumnFilter(field.key, { kind: "multi", values })}
+                onOpen={() => onRequestFilterOptions?.(field.key)}
               />
             ) : filter.kind === "numeric" ? (
               <NumericFilter filter={filter} onChange={(f) => setColumnFilter(field.key, f)} />
@@ -461,8 +435,21 @@ export function OrdersDataTable({
           style={{ backgroundColor: '#f0f7ff', borderBottom: '1px solid #d0e7ff', color: '#5d6b88' }}
         >
           <span>
-            Showing <span className="font-semibold" style={{ color: '#012e64' }}>{filteredOrders.length}</span> of{" "}
-            <span className="font-semibold" style={{ color: '#012e64' }}>{orders.length}</span> on this page
+            {totalRows !== undefined ? (
+              <>
+                <span className="font-semibold" style={{ color: '#012e64' }}>
+                  {totalRows.toLocaleString()}
+                </span>{" "}
+                matching {totalRows === 1 ? 'row' : 'rows'} across all pages
+              </>
+            ) : (
+              <>
+                <span className="font-semibold" style={{ color: '#012e64' }}>
+                  {orders.length}
+                </span>{" "}
+                matching {orders.length === 1 ? 'row' : 'rows'}
+              </>
+            )}
             {" "}({activeFilterCount} column {activeFilterCount === 1 ? 'filter' : 'filters'})
           </span>
           <button
@@ -486,7 +473,7 @@ export function OrdersDataTable({
             {renderFilterRow()}
           </thead>
           <tbody>
-            {filteredOrders.map((order, idx) => {
+            {orders.map((order, idx) => {
               const delayed = ["delay_first_delivery", "delay_first_revision", "delay_second_revision"].some(
                 (k) => Number(order[k]) > 0
               )
@@ -517,8 +504,12 @@ export function OrdersDataTable({
                         <span
                           className="inline-block rounded-full px-2.5 py-1 text-xs font-semibold"
                           style={{
-                            backgroundColor: orderStatusStyles[order.order_status]?.bg ?? '#e8ecf3',
-                            color: orderStatusStyles[order.order_status]?.fg ?? '#5d6b88',
+                            backgroundColor:
+                              ORDER_STATUS_STYLES[order.order_status as OrderStatus]?.bg ??
+                              ORDER_STATUS_FALLBACK.bg,
+                            color:
+                              ORDER_STATUS_STYLES[order.order_status as OrderStatus]?.fg ??
+                              ORDER_STATUS_FALLBACK.fg,
                           }}
                         >
                           {order.order_status}
@@ -626,12 +617,12 @@ export function OrdersDataTable({
             })}
           </tbody>
         </table>
-        {filteredOrders.length === 0 && (
+        {orders.length === 0 && (
           <div className="flex flex-col items-center justify-center h-64 gap-2">
             <p className="text-gray-500">
-              {orders.length === 0 ? "No orders found" : "No orders match the current filters"}
+              {activeFilterCount === 0 ? "No orders found" : "No orders match the current filters"}
             </p>
-            {orders.length > 0 && activeFilterCount > 0 && (
+            {activeFilterCount > 0 && (
               <button
                 onClick={clearFilters}
                 className="text-sm font-medium hover:underline"

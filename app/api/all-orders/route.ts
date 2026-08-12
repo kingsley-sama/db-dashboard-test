@@ -1,6 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/my-app-auth';
 import { supabaseAdmin } from '@/lib/supabase';
+import {
+  ALL_ORDERS_FILTER_COLUMNS,
+  applyColumnFilters,
+  buildSearchFilter,
+  parseColumnFilters,
+} from '@/lib/column-filters';
+
+// Text columns the search box matches against.
+const SEARCH_COLUMNS = [
+  'project_id',
+  'order_id',
+  'product',
+  'product_name',
+  'supplier',
+  'order_number',
+  'company_name',
+];
 
 // GET /api/all-orders - Fetch all_orders with pagination and search
 export async function GET(request: NextRequest) {
@@ -19,42 +36,35 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '500');
     const offset = (page - 1) * limit;
     const search = searchParams.get('search') || '';
+    // Order status drill-down from the dashboard tiles / toolbar dropdown.
+    const filterStatus = searchParams.get('status') || '';
+    // Per-column header filters. Unknown columns are dropped by the whitelist.
+    const columnFilters = parseColumnFilters(
+      searchParams.get('columnFilters'),
+      ALL_ORDERS_FILTER_COLUMNS
+    );
 
-    const baseQuery = supabaseAdmin.from('all_orders').select('*', { count: 'exact' });
+    // One filter chain, applied identically to the count and the data query —
+    // they must agree or the row total contradicts the rows on screen.
+    const buildQuery = (options?: { count: 'exact'; head: true }) => {
+      let query = supabaseAdmin.from('all_orders').select('*', options);
 
-    let query = baseQuery;
-    if (search) {
-      query = query.or(
-        `project_id.ilike.%${search}%,` +
-        `order_id.ilike.%${search}%,` +
-        `product.ilike.%${search}%,` +
-        `product_name.ilike.%${search}%,` +
-        `supplier.ilike.%${search}%,` +
-        `order_number.ilike.%${search}%,` +
-        `company_name.ilike.%${search}%`
-      );
-    }
+      if (search) {
+        query = query.or(buildSearchFilter(SEARCH_COLUMNS, search));
+      }
+      if (filterStatus) {
+        query = query.eq('order_status', filterStatus);
+      }
 
-    const { count, error: countError } = await query;
+      return applyColumnFilters(query, columnFilters, ALL_ORDERS_FILTER_COLUMNS);
+    };
+
+    const { count, error: countError } = await buildQuery({ count: 'exact', head: true });
     if (countError) {
       return NextResponse.json({ error: countError.message }, { status: 500 });
     }
 
-    let dataQuery = supabaseAdmin.from('all_orders').select('*');
-
-    if (search) {
-      dataQuery = dataQuery.or(
-        `project_id.ilike.%${search}%,` +
-        `order_id.ilike.%${search}%,` +
-        `product.ilike.%${search}%,` +
-        `product_name.ilike.%${search}%,` +
-        `supplier.ilike.%${search}%,` +
-        `order_number.ilike.%${search}%,` +
-        `company_name.ilike.%${search}%`
-      );
-    }
-
-    const { data, error } = await dataQuery
+    const { data, error } = await buildQuery()
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 

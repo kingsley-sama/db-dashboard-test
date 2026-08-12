@@ -19,27 +19,14 @@ import { Calendar } from "@/components/ui/calendar"
 //               mm/dd/yy or mm/dd/yy-mm/dd/yy so older typed filters still parse)
 // ---------------------------------------------------------------------------
 
-export type NumericOp = "=" | ">" | "<" | ">=" | "<="
-export type FilterKind = "text" | "multi" | "numeric" | "date"
+// The filter shapes and the `isFilterActive` predicate now live in
+// lib/column-filters.ts so the API routes can share them (a route can't import
+// this file — it's a client component). Re-exported here so existing importers
+// keep working.
+import type { ColumnFilter, NumericOp } from "@/lib/column-filters"
 
-export type ColumnFilter =
-  | { kind: "text"; value: string }
-  | { kind: "multi"; values: string[] }
-  | { kind: "numeric"; op: NumericOp; value: string }
-  | { kind: "date"; text: string }
-
-export const defaultFilter = (kind: FilterKind): ColumnFilter => {
-  switch (kind) {
-    case "multi":
-      return { kind: "multi", values: [] }
-    case "numeric":
-      return { kind: "numeric", op: "=", value: "" }
-    case "date":
-      return { kind: "date", text: "" }
-    default:
-      return { kind: "text", value: "" }
-  }
-}
+export type { NumericOp, FilterKind, ColumnFilter } from "@/lib/column-filters"
+export { defaultFilter, isFilterActive } from "@/lib/column-filters"
 
 // Pull a comparable number out of a displayed cell value, ignoring currency
 // symbols, thousands separators, "%", "hours", etc. ("€1,234.56" -> 1234.56).
@@ -88,18 +75,22 @@ export const parseDateRange = (s: string): { from: Date | null; to: Date | null 
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
 
-export const isFilterActive = (filter: ColumnFilter): boolean => {
-  switch (filter.kind) {
-    case "multi":
-      return filter.values.length > 0
-    case "numeric":
-      return parseNumeric(filter.value) !== null
-    case "date": {
-      const { from, to } = parseDateRange(filter.text)
-      return from !== null || to !== null
-    }
-    default:
-      return filter.value.trim() !== ""
+/**
+ * Resolves the typed mm/dd/yy text into the absolute instants the server
+ * compares against. The bounds are whole days in the *browser's* timezone,
+ * matching the toLocaleDateString() the cells are rendered with — sending the
+ * raw text would compare local days against UTC timestamps and slide rows onto
+ * the wrong day.
+ */
+export const buildDateFilter = (text: string): ColumnFilter => {
+  const { from, to } = parseDateRange(text)
+  return {
+    kind: "date",
+    text,
+    from: from ? new Date(from.getFullYear(), from.getMonth(), from.getDate()).toISOString() : null,
+    to: to
+      ? new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 999).toISOString()
+      : null,
   }
 }
 
@@ -145,10 +136,13 @@ export function MultiSelectFilter({
   options,
   values,
   onChange,
+  onOpen,
 }: {
   options: string[]
   values: string[]
   onChange: (values: string[]) => void
+  /** Fired when the panel opens, so options can be loaded on demand. */
+  onOpen?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const btnRef = useRef<HTMLButtonElement>(null)
@@ -184,6 +178,7 @@ export function MultiSelectFilter({
     if (!open && btnRef.current) {
       const r = btnRef.current.getBoundingClientRect()
       setPos({ top: r.bottom + 4, left: r.left, width: Math.max(r.width, 180) })
+      onOpen?.()
     }
     setOpen((o) => !o)
   }
@@ -343,7 +338,7 @@ export function DateRangeFilter({
   onChange,
 }: {
   filter: { text: string }
-  onChange: (filter: { kind: "date"; text: string }) => void
+  onChange: (filter: ColumnFilter) => void
 }) {
   const [open, setOpen] = useState(false)
   const btnRef = useRef<HTMLButtonElement>(null)
@@ -396,7 +391,7 @@ export function DateRangeFilter({
   }
 
   const commit = (range: DateRange | undefined) =>
-    onChange({ kind: "date", text: serializeRange(range?.from ?? null, range?.to ?? null) })
+    onChange(buildDateFilter(serializeRange(range?.from ?? null, range?.to ?? null)))
 
   const label = !from && !to ? "All dates" : from && to && startOfDay(from) === startOfDay(to)
     ? formatDate(from)
@@ -472,7 +467,7 @@ export function DateRangeFilter({
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
-                    onClick={() => onChange({ kind: "date", text: "" })}
+                    onClick={() => onChange(buildDateFilter(""))}
                     className="px-2 py-1 rounded text-xs hover:bg-blue-50"
                     style={{ color: "#8d9499", border: "1px solid #cbd5e1" }}
                   >

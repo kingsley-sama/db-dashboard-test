@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { X, AlertCircle } from "lucide-react"
 import { Textarea } from "@/components/ui/textarea"
+import { ORDER_STATUSES } from "@/lib/order-status"
 
 interface ProductCode {
   id: number
@@ -222,10 +223,9 @@ export function EditOrderDialog({
                   style={{ border: '1px solid #8d9499', color: '#012e64' }}
                 >
                   <option value="">Select status</option>
-                  <option value="Yet to start">Yet to start</option>
-                  <option value="In progress">In progress</option>
-                  <option value="Blocked">Blocked</option>
-                  <option value="Completed">Completed</option>
+                  {ORDER_STATUSES.map((status) => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
                 </select>
               </div>
               <div>
