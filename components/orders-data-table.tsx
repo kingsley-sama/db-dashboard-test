@@ -34,7 +34,6 @@ export type DisplayField = {
 
 const displayFields: DisplayField[] = [
   { key: "order_id", label: "Order ID", width: "min-w-[140px]" },
-  { key: "order_status", label: "Order Status", width: "min-w-[140px]" },
   { key: "client_rating", label: "Ranking", width: "min-w-[110px]" },
   { key: "company_name", label: "Company Name", width: "min-w-[180px]", maxWidth: "400px" },
   { key: "product_name", label: "Product Name", width: "min-w-[150px]" },
@@ -64,6 +63,7 @@ const displayFields: DisplayField[] = [
   { key: "comments", label: "Comments", width: "min-w-[20px]", maxWidth: "900px" },
   { key: "created_at", label: "Date Order Entry", width: "min-w-[150px]" },
   { key: "supplier_payment", label: "Supplier Payment", width: "min-w-[150px]" },
+  { key: "order_status", label: "Order Status", width: "min-w-[140px]" },
 ]
 
 // Columns whose filter is a multi-select dropdown of the distinct values
