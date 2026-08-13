@@ -165,6 +165,7 @@ export function EditOrderDialog({
                   <option value="Boris">Boris</option>
                   <option value="Warih">Warih</option>
                   <option value="Alamin">Alamin</option>
+                  <option value="Aliyu">Aliyu</option>
                 </select>
               </div>
               <div>
