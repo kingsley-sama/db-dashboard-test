@@ -1,0 +1,119 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dry-run-flag",
+              "leftValue": "={{ $('Set Inputs').first().json.dry_run }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Dry run?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1088, 176],
+      "id": "b1d4f2a0-0001-4c11-9f21-aa0000000001"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dry-run-flag-post",
+              "leftValue": "={{ $('Set Inputs').first().json.dry_run }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Dry run? (post-naming)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1424, 24],
+      "id": "b1d4f2a0-0002-4c11-9f21-aa0000000002"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collapses the named orders into the payload the dashboard renders.\n//\n// This runs on the output of \"Order id generation\", so product_name is exactly\n// the key the real run passes to claim_intake_order — the preview and the run\n// cannot disagree about what an order is called.\n//\n// Nothing is written here. The only side effect of a dry run is one row in\n// project_intake_previews, written by the app when the callback lands.\nconst inputs = $('Set Inputs').first().json;\n\nconst expected_orders = items.map(item => {\n  const brief = item.json.brief || '';\n  const countMatch = brief.match(/consists of\\s+(\\d+)×/i);\n\n  return {\n    product_name: item.json.projectType,\n    task_name: item.json.projectName,\n    quantity: countMatch ? Number(countMatch[1]) : 1,\n    brief,\n  };\n});\n\nreturn [{\n  json: {\n    job_id: inputs.job_id,\n    project_id: inputs.project_id,\n    status: 'completed',\n    expected_orders,\n  },\n}];\n"
+      },
+      "name": "Build dry-run result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1648, 24],
+      "id": "b1d4f2a0-0003-4c11-9f21-aa0000000003"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Inputs').first().json.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-callback-secret",
+              "value": "={{ $env.N8N_CALLBACK_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "name": "Post preview callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1872, 24],
+      "id": "b1d4f2a0-0004-4c11-9f21-aa0000000004"
+    }
+  ],
+  "connections": {
+    "Dry run?": {
+      "main": [
+        [{ "node": "Order id generation", "type": "main", "index": 0 }],
+        [{ "node": "Loop Over Items", "type": "main", "index": 0 }]
+      ]
+    },
+    "Dry run? (post-naming)": {
+      "main": [
+        [{ "node": "Build dry-run result", "type": "main", "index": 0 }],
+        [{ "node": "Claim order (idempotent)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build dry-run result": {
+      "main": [[{ "node": "Post preview callback", "type": "main", "index": 0 }]]
+    }
+  }
+}

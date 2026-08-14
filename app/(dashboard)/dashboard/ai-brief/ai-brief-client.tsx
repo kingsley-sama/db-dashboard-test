@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { ProjectIntakePanel } from '@/components/project-intake-panel';
 import {
   Sparkles,
   Search,
@@ -780,6 +781,16 @@ export function AiBriefClient() {
                   ))
                 )}
               </div>
+            )}
+
+            {/* The brief page is the one project surface PMs can reach, so the
+                questionnaire handover lives here too: the PM records that the
+                questionnaire arrived, which starts the project intake. */}
+            {(selected?.project_id ?? activeProjectId) && (
+              <ProjectIntakePanel
+                key={selected?.project_id ?? activeProjectId}
+                projectId={(selected?.project_id ?? activeProjectId) as string}
+              />
             )}
 
             <div className="rounded-2xl border border-gray-200 bg-white shadow-sm focus-within:border-gray-300 p-2 flex items-center gap-2">

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { X, AlertCircle, CheckCircle2, XCircle, Loader2 } from "lucide-react"
+import { ProjectIntakePanel } from "@/components/project-intake-panel"
 
 type EnumMap = Record<string, string[]>
 
@@ -191,7 +192,10 @@ export function EditProjectDialog({
       construction_type: formData.construction_type || null,
       property_type: formData.property_type || null,
       project_status: formData.project_status || null,
-      questionnaire_received: formData.questionnaire_received || null,
+      // questionnaire_received is deliberately not sent here. It is written by
+      // the Questionnaire & Intake panel through its own endpoint, because the
+      // 'No' -> 'Yes' transition starts the intake automation and must not ride
+      // along with an unrelated bulk edit of the project.
       deposit: formData.deposit || null,
       order_confirmation_date: formData.order_confirmation_date || null,
       invoice_number: formData.invoice_number || null,
@@ -370,9 +374,16 @@ export function EditProjectDialog({
               {renderEnumSelect("construction_type", "Construction Type", "construction_type_values")}
               {renderEnumSelect("property_type", "Property Type", "property_type_values")}
               {renderEnumSelect("project_status", "Project Status", "project_status_values")}
-              {renderEnumSelect("questionnaire_received", "Questionnaire Received", "yes_no_values")}
               {renderEnumSelect("deposit", "Deposit", "yes_no_values")}
               {renderEnumSelect("first_or_next_project", "First/Next Project", "first_next_project")}
+
+              <ProjectIntakePanel
+                projectId={project.id}
+                initialQuestionnaireReceived={project.questionnaire_received}
+                onChange={(value) =>
+                  setFormData((prev: any) => ({ ...prev, questionnaire_received: value }))
+                }
+              />
               <div>
                 <label className="text-sm font-medium" style={{ color: '#012e64' }}>Path to Files</label>
                 <Input name="path_to_files" value={formData.path_to_files || ""} onChange={handleChange} className="bg-white" style={{ borderColor: '#8d9499', color: '#012e64' }} />
