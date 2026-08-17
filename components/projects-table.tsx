@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { usePersistedTableState, fetchAllRows, downloadCsv } from "@/lib/table-utils"
+import { serializeColumnFilters } from "@/lib/column-filters"
 import { ProjectsDataTable } from "@/components/projects-data-table"
 import { CreateProjectDialog } from "@/components/create-project-dialog"
 import { EditProjectDialog } from "@/components/edit-project-dialog"
@@ -25,9 +26,16 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
   // survive changing pages, search, or column filters.
   const [selectMode, setSelectMode] = useState(false)
   const [selectedRows, setSelectedRows] = useState<Map<any, any>>(new Map())
-  // Search/page persist to localStorage and restore when returning to this page
-  const { searchTerm, setSearchTerm, currentPage, setCurrentPage, ready } =
-    usePersistedTableState("table-state:projects")
+  // Search/filters/page persist to localStorage and restore when returning here
+  const {
+    searchTerm,
+    setSearchTerm,
+    columnFilters,
+    setColumnFilters,
+    currentPage,
+    setCurrentPage,
+    ready,
+  } = usePersistedTableState("table-state:projects")
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [editingProject, setEditingProject] = useState<any>(null)
   const [deletingProject, setDeletingProject] = useState<any>(null)
@@ -39,11 +47,30 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
     totalPages: 0
   })
 
-  // Fetch projects when page, search, or filter changes (once saved state is restored)
+  // Column filters go to the API alongside the search box, so they narrow the
+  // whole table rather than just the rows already loaded.
+  const serializedFilters = useMemo(() => serializeColumnFilters(columnFilters), [columnFilters])
+
+  // Typing in a filter or the search box shouldn't fire a query per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState(searchTerm)
+  const [debouncedFilters, setDebouncedFilters] = useState(serializedFilters)
   useEffect(() => {
-    if (!ready) return
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm)
+      setDebouncedFilters(serializedFilters)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchTerm, serializedFilters])
+
+  const settled = debouncedSearch === searchTerm && debouncedFilters === serializedFilters
+
+  // Fetch projects when page, search, or filter changes (once saved state is
+  // restored). Waiting for `settled` keeps the restored state from firing an
+  // extra request with the pre-restore values.
+  useEffect(() => {
+    if (!ready || !settled) return
     fetchProjects(currentPage)
-  }, [ready, currentPage, searchTerm])
+  }, [ready, settled, currentPage, debouncedSearch, debouncedFilters])
 
   const fetchProjects = async (page = 1) => {
     setLoading(true)
@@ -55,6 +82,7 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
       })
 
       if (searchTerm) params.append('search', searchTerm)
+      if (serializedFilters) params.append('columnFilters', serializedFilters)
 
       const response = await fetch(`/api/projects?${params.toString()}`)
       const result = await response.json()
@@ -75,6 +103,30 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
 
   // Changing the search resets to page 1 inside usePersistedTableState
 
+  // Distinct values for the multi-select column filters. Fetched per column the
+  // first time its dropdown opens — the whole table's values, not just the
+  // loaded page's — and kept for the life of the mounted table.
+  const [filterOptions, setFilterOptions] = useState<Record<string, string[]>>({})
+  const requestedOptions = useRef<Set<string>>(new Set())
+
+  const handleRequestFilterOptions = useCallback(async (column: string) => {
+    if (requestedOptions.current.has(column)) return
+    requestedOptions.current.add(column)
+    try {
+      const response = await fetch(
+        `/api/projects/filter-options?column=${encodeURIComponent(column)}`
+      )
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || "Failed to load filter options")
+      setFilterOptions((prev) => ({ ...prev, [column]: result.values || [] }))
+    } catch {
+      // Leave the dropdown empty and allow a retry on the next open.
+      requestedOptions.current.delete(column)
+    }
+  }, [])
+
+  const hasFilters = Boolean(searchTerm || serializedFilters)
+
   const handleExportCsv = async (scope: "filtered" | "all" | "selected") => {
     setExporting(true)
     setError("")
@@ -84,14 +136,16 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
           ? Array.from(selectedRows.values())
           : await fetchAllRows(
               "/api/projects",
-              scope === "filtered" ? { search: searchTerm } : {}
+              scope === "filtered"
+                ? { search: searchTerm, columnFilters: serializedFilters }
+                : {}
             )
       if (rows.length === 0) {
         setError("Nothing to export")
         return
       }
       const suffix =
-        scope === "selected" ? "_selected" : scope === "filtered" && searchTerm ? "_filtered" : ""
+        scope === "selected" ? "_selected" : scope === "filtered" && hasFilters ? "_filtered" : ""
       downloadCsv(rows, `projects${suffix}_${new Date().toISOString().slice(0, 10)}.csv`)
     } catch (err: any) {
       setError(err.message)
@@ -356,9 +410,9 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => handleExportCsv("filtered")}
-                  disabled={!searchTerm}
+                  disabled={!hasFilters}
                 >
-                  Filtered rows{searchTerm ? ` (${pagination.total.toLocaleString()})` : ''}
+                  Filtered rows{hasFilters ? ` (${pagination.total.toLocaleString()})` : ''}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleExportCsv("all")}>
                   All rows
@@ -383,7 +437,7 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
               {pagination.total.toLocaleString()}
             </div>
             <div className="text-sm font-medium" style={{ color: '#5d6b88' }}>
-              Total Projects{searchTerm ? ' (filtered)' : ''}
+              Total Projects{hasFilters ? ' (filtered)' : ''}
             </div>
           </div>
         </div>
@@ -414,7 +468,7 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
               <p style={{ color: '#5d6b88' }}>Loading projects...</p>
             </div>
           </div>
-        ) : projects.length === 0 ? (
+        ) : projects.length === 0 && !serializedFilters ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
               <p className="text-lg font-medium" style={{ color: '#012e64' }}>No projects found</p>
@@ -422,6 +476,9 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
             </div>
           </div>
         ) : (
+          // With column filters active the table stays mounted even with no
+          // rows: the filter inputs live in its header, so hiding it would
+          // strand the user with no way to clear them.
           <ProjectsDataTable
             projects={projects}
             onEdit={setEditingProject}
@@ -430,6 +487,11 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
             selectedIds={new Set(selectedRows.keys())}
             onToggleRow={handleToggleRow}
             onToggleAll={handleToggleAll}
+            columnFilters={columnFilters}
+            onColumnFiltersChange={setColumnFilters}
+            filterOptions={filterOptions}
+            onRequestFilterOptions={handleRequestFilterOptions}
+            totalRows={pagination.total}
           />
         )}
       </div>

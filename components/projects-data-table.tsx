@@ -2,7 +2,7 @@
 
 import { Edit2, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
   ColumnFilter,
   DateRangeFilter,
@@ -10,8 +10,6 @@ import {
   NumericFilter,
   defaultFilter,
   isFilterActive,
-  matchesDate,
-  matchesNumeric,
 } from "@/components/data-table-filters"
 
 const displayFields = [
@@ -82,6 +80,11 @@ export function ProjectsDataTable({
   selectedIds,
   onToggleRow,
   onToggleAll,
+  columnFilters,
+  onColumnFiltersChange,
+  filterOptions = {},
+  onRequestFilterOptions,
+  totalRows,
 }: {
   projects: any[]
   onEdit: (project: any) => void
@@ -90,6 +93,18 @@ export function ProjectsDataTable({
   selectedIds?: Set<any>
   onToggleRow?: (project: any, checked: boolean) => void
   onToggleAll?: (projects: any[], checked: boolean) => void
+  /**
+   * Per-column filters are owned by the parent and sent to the API, so they
+   * apply across the whole table rather than just the loaded page.
+   */
+  columnFilters: Record<string, ColumnFilter>
+  onColumnFiltersChange: (filters: Record<string, ColumnFilter>) => void
+  /** Distinct values per column, fetched from the server. */
+  filterOptions?: Record<string, string[]>
+  /** Called when a dropdown opens, so the parent can load its options. */
+  onRequestFilterOptions?: (column: string) => void
+  /** Server-wide row count for the active filters. */
+  totalRows?: number
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const theadRef = useRef<HTMLTableSectionElement>(null)
@@ -177,57 +192,20 @@ export function ProjectsDataTable({
     return value
   }
 
-  // Per-column filters. Text/multi columns filter against the *displayed*
-  // value, so what the user types/picks matches what they see in the cell
-  // (status labels, Yes/No, etc.).
-  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilter>>({})
+  // Per-column filters. These are applied by the API against the raw column
+  // values, so they match every row in the table rather than only the loaded
+  // page. Note that means they compare the *stored* value, not the formatted
+  // cell text.
   const getFilter = (key: string): ColumnFilter =>
     columnFilters[key] ?? defaultFilter(filterKind(key))
   const setColumnFilter = (key: string, filter: ColumnFilter) =>
-    setColumnFilters((prev) => ({ ...prev, [key]: filter }))
-  const clearFilters = () => setColumnFilters({})
+    onColumnFiltersChange({ ...columnFilters, [key]: filter })
+  const clearFilters = () => onColumnFiltersChange({})
   const activeFilterCount = Object.values(columnFilters).filter(isFilterActive).length
 
-  // Distinct values for dropdown columns, derived from the loaded rows.
-  const filterOptions = useMemo(() => {
-    const map: Record<string, string[]> = {}
-    for (const field of displayFields) {
-      if (!selectColumns.has(field.key)) continue
-      const set = new Set<string>()
-      for (const project of projects) {
-        const formatted = String(formatValue(project[field.key], field.key) ?? "")
-        if (formatted && formatted !== "-") set.add(formatted)
-      }
-      map[field.key] = Array.from(set).sort((a, b) =>
-        a.localeCompare(b, undefined, { numeric: true })
-      )
-    }
-    return map
-  }, [projects])
-
-  const filteredProjects = useMemo(() => {
-    const active = Object.entries(columnFilters).filter(([, f]) => isFilterActive(f))
-    if (active.length === 0) return projects
-    return projects.filter((project) =>
-      active.every(([key, filter]) => {
-        const display = String(formatValue(project[key], key) ?? "")
-        switch (filter.kind) {
-          case "multi":
-            return filter.values.includes(display)
-          case "numeric":
-            return matchesNumeric(display, filter)
-          case "date":
-            return matchesDate(project[key], filter)
-          default:
-            return display.toLowerCase().includes(filter.value.trim().toLowerCase())
-        }
-      })
-    )
-  }, [projects, columnFilters])
-
-  // Select-all applies to the rows visible under the current column filters
+  // Select-all applies to the rows on the current page.
   const allFilteredSelected =
-    filteredProjects.length > 0 && filteredProjects.every((p) => selectedIds?.has(p.id))
+    projects.length > 0 && projects.every((p) => selectedIds?.has(p.id))
 
   const renderHeaderCells = (fixedWidths: boolean) => (
     <tr style={{ borderBottom: '2px solid #e5e5e5' }}>
@@ -258,7 +236,7 @@ export function ProjectsDataTable({
                 <input
                   type="checkbox"
                   checked={allFilteredSelected}
-                  onChange={(e) => onToggleAll?.(filteredProjects, e.target.checked)}
+                  onChange={(e) => onToggleAll?.(projects, e.target.checked)}
                   title="Select all rows on this page (matching filters)"
                   className="h-4 w-4 cursor-pointer"
                   style={{ accentColor: '#012e64' }}
@@ -317,6 +295,7 @@ export function ProjectsDataTable({
                 options={filterOptions[field.key] ?? []}
                 values={filter.values}
                 onChange={(values) => setColumnFilter(field.key, { kind: "multi", values })}
+                onOpen={() => onRequestFilterOptions?.(field.key)}
               />
             ) : filter.kind === "numeric" ? (
               <NumericFilter filter={filter} onChange={(f) => setColumnFilter(field.key, f)} />
@@ -362,8 +341,21 @@ export function ProjectsDataTable({
           style={{ backgroundColor: '#f0f7ff', borderBottom: '1px solid #d0e7ff', color: '#5d6b88' }}
         >
           <span>
-            Showing <span className="font-semibold" style={{ color: '#012e64' }}>{filteredProjects.length}</span> of{" "}
-            <span className="font-semibold" style={{ color: '#012e64' }}>{projects.length}</span> on this page
+            {totalRows !== undefined ? (
+              <>
+                <span className="font-semibold" style={{ color: '#012e64' }}>
+                  {totalRows.toLocaleString()}
+                </span>{" "}
+                matching {totalRows === 1 ? 'project' : 'projects'} across all pages
+              </>
+            ) : (
+              <>
+                <span className="font-semibold" style={{ color: '#012e64' }}>
+                  {projects.length}
+                </span>{" "}
+                matching {projects.length === 1 ? 'project' : 'projects'}
+              </>
+            )}
             {" "}({activeFilterCount} column {activeFilterCount === 1 ? 'filter' : 'filters'})
           </span>
           <button
@@ -387,7 +379,7 @@ export function ProjectsDataTable({
             {renderFilterRow()}
           </thead>
           <tbody>
-            {filteredProjects.map((project, idx) => {
+            {projects.map((project, idx) => {
               const rowBg = idx % 2 === 0 ? '#ffffff' : '#fafafa'
               return (
               <tr
@@ -479,12 +471,12 @@ export function ProjectsDataTable({
             })}
           </tbody>
         </table>
-        {filteredProjects.length === 0 && (
+        {projects.length === 0 && (
           <div className="flex flex-col items-center justify-center h-64 gap-2">
             <p className="text-gray-500">
-              {projects.length === 0 ? "No projects found" : "No projects match the current filters"}
+              {activeFilterCount > 0 ? "No projects match the current filters" : "No projects found"}
             </p>
-            {projects.length > 0 && activeFilterCount > 0 && (
+            {activeFilterCount > 0 && (
               <button
                 onClick={clearFilters}
                 className="text-sm font-medium hover:underline"

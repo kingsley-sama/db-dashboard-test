@@ -173,6 +173,51 @@ export const PROJECT_ORDERS_FILTER_COLUMNS: ColumnFilterMap = {
   sales_person: e("sales_person"),
 }
 
+/**
+ * /api/projects. Keys match the `key` of the displayFields entries in
+ * components/projects-data-table.tsx.
+ */
+export const PROJECTS_FILTER_COLUMNS: ColumnFilterMap = {
+  project_id: t("project_id"),
+  project_name: t("project_name"),
+  client_contact_name: t("client_contact_name"),
+  company_email: t("company_email"),
+  invoice_number: t("invoice_number"),
+  path_to_files: t("path_to_files"),
+
+  client_rating: e("client_rating"),
+  project_status: e("project_status"),
+  project_manager: e("project_manager"),
+  pm_type: e("pm_type"),
+  sales_person: e("sales_person"),
+  project_type: e("project_type"),
+  construction_type: e("construction_type"),
+  property_type: e("property_type"),
+  first_or_next_project: e("first_or_next_project"),
+  questionnaire_received: e("questionnaire_received"),
+  deposit: e("deposit"),
+  partial_invoice: e("partial_invoice"),
+
+  order_confirmation_date: d("order_confirmation_date"),
+  invoice_date: d("invoice_date"),
+  invoice_paid_date: d("invoice_paid_date"),
+  partial_invoice_paid_date: d("partial_invoice_paid_date"),
+  delivery_completion_date: d("delivery_completion_date"),
+  created_at: d("created_at"),
+
+  // CAVEAT: the cell shows the *latest* project_completion_date across the
+  // project's orders (see GET /api/projects), while this filters the embedded
+  // order rows — so a range matches a project when *any* of its orders falls in
+  // it. The two agree for the common single-order project and for equality on a
+  // project whose latest order is the match, and differ only for a
+  // multi-order project filtered on a range its latest order is outside of.
+  project_completion_date: {
+    column: "orders.project_completion_date",
+    type: "date",
+    embed: "orders",
+  },
+}
+
 // ---------------------------------------------------------------------------
 // PostgREST value escaping
 // ---------------------------------------------------------------------------
