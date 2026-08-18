@@ -147,6 +147,11 @@ export async function POST(request: NextRequest) {
         text: 'Generate a project brief'
       },
       result_payload: null,
+      // Which context source produced this entry. The mailbox workflow is the
+      // only producer today; Teams briefs will append entries tagged 'teams'.
+      // brief_conversations backfilled every historical entry with 'email', so
+      // this must be set or new entries become the only untagged ones.
+      source: 'email',
       callback_url: callbackUrl,
       created_at: new Date().toISOString(),
       completed_at: null

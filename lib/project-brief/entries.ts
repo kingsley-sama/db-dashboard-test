@@ -10,8 +10,13 @@ export interface BriefEntryRequest {
   text: string | null;
 }
 
+export type BriefSource = 'email' | 'teams' | 'both';
+
 export interface BriefEntry {
   job_id: string;
+  // Absent on entries written before the source discriminator existed; readers
+  // treat a missing value as 'email'.
+  source?: BriefSource;
   status: 'processing' | 'success' | 'error' | 'stopped';
   error_code: string | null;
   request: BriefEntryRequest;
@@ -26,6 +31,7 @@ export interface BriefEntry {
 export function summarizeEntry(entry: any) {
   return {
     job_id: entry.job_id,
+    source: entry.source ?? 'email',
     status: entry.status,
     error_code: entry.error_code ?? null,
     request: entry.request ?? null,
@@ -40,25 +46,46 @@ function unwrap(payload: any) {
   return (Array.isArray(payload) ? payload[0] : payload) ?? {};
 }
 
-// Full entry for rendering, with the base64 attachment stripped out: the thread
-// view only needs to know a file exists (to show the download button), and the
-// bytes are fetched on demand from /api/project-brief/[jobId].
+export interface ThreadFile {
+  source: BriefSource;
+  filename: string | null;
+  mime_type: string;
+  content: string | null; // base64; null once stripped for listing
+}
+
+// A brief can come back with more than one transcript: the PM's email thread,
+// and — when the project has activity in the Teams channel — the Teams threads.
+// Three payload shapes exist in the wild and all have to keep rendering:
+//   1. a bare object            { filename, mime_type, content }      (original)
+//   2. an array using content_email                                   (current n8n)
+//   3. an array using content                                         (from now on)
+export function normalizeThreadFiles(rawPayload: any): ThreadFile[] {
+  const payload = unwrap(rawPayload);
+  const raw = payload?.raw_thread_file;
+  if (!raw) return [];
+  return (Array.isArray(raw) ? raw : [raw]).filter(Boolean).map((f: any) => ({
+    source: (f.source ?? 'email') as BriefSource,
+    filename: f.filename ?? null,
+    mime_type: f.mime_type ?? 'text/markdown',
+    content: f.content ?? f.content_email ?? null
+  }));
+}
+
+// Full entry for rendering, with the base64 attachments stripped out: the thread
+// view only needs to know which files exist (to show the download buttons), and
+// the bytes are fetched on demand from /api/project-brief/[jobId].
 export function renderableEntry(entry: any) {
   const payload = unwrap(entry.result_payload);
-  const file = payload.raw_thread_file;
-  const result_payload =
-    entry.result_payload == null
-      ? null
-      : {
-          ...payload,
-          raw_thread_file: file
-            ? { filename: file.filename, mime_type: file.mime_type, content: null }
-            : undefined
-        };
+  const files = normalizeThreadFiles(entry.result_payload);
+  const stripped = files.map((f) => ({ ...f, content: null }));
 
   return {
     ...summarizeEntry(entry),
-    result_payload,
-    has_thread_file: Boolean(file?.content)
+    result_payload:
+      entry.result_payload == null
+        ? null
+        : { ...payload, raw_thread_file: stripped.length ? stripped : undefined },
+    has_thread_file: files.some((f) => Boolean(f.content)),
+    thread_files: stripped
   };
 }

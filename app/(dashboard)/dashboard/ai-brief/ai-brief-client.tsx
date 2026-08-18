@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ProjectIntakePanel } from '@/components/project-intake-panel';
+import { normalizeThreadFiles } from '@/lib/project-brief/entries';
 import {
   Sparkles,
   Search,
@@ -66,6 +67,8 @@ interface BriefEntry {
   has_result: boolean;
   result_payload?: any;
   has_thread_file?: boolean;
+  source?: 'email' | 'teams' | 'both';
+  thread_files?: { source: string; filename: string | null; mime_type: string }[];
 }
 
 // A project's full brief history — one row in brief_conversations.
@@ -90,20 +93,29 @@ interface BriefResult {
   project_name?: string;
   pm?: { mailbox_email?: string };
   summary?: BriefSummary | string;
-  raw_thread_file?: {
-    filename: string;
-    mime_type: string;
-    content: string | null; // base64; null in thread responses, fetched on demand
-  };
+  raw_thread_file?:
+    | { filename: string; mime_type: string; content: string | null }
+    | { filename: string; mime_type: string; content: string | null }[];
   metadata?: {
     email_count?: number;
     date_range?: { earliest?: string; latest?: string };
+    teams_thread_count?: number;
+    teams_message_count?: number;
   };
   error?: string;
   message?: string;
 }
 
 const POLL_INTERVAL_MS = 5000;
+// Warn the user before the server-side sweeper acts, then stop polling shortly
+// after it would have. fail_stale_briefs() closes anything still 'processing'
+// after 30 minutes, so a brief older than the ceiling is never coming back and
+// polling it is just wasted requests against an open tab.
+const SLOW_AFTER_MS = 10 * 60 * 1000;
+const POLL_CEILING_MS = 35 * 60 * 1000;
+
+const entryAgeMs = (entry: BriefEntry) =>
+  entry.created_at ? Date.now() - new Date(entry.created_at).getTime() : 0;
 const BRAND = '#012e64';
 
 const SUMMARY_SECTIONS: { key: keyof BriefSummary; title: string }[] = [
@@ -237,7 +249,9 @@ export function AiBriefClient() {
 
   // Poll while anything in the open conversation is still being generated, so
   // the response lands under its request without a reload.
-  const threadProcessing = thread?.entries.some((e) => e.status === 'processing');
+  const threadProcessing = thread?.entries.some(
+    (e) => e.status === 'processing' && entryAgeMs(e) < POLL_CEILING_MS
+  );
   useEffect(() => {
     if (!threadProcessing || !activeProjectId) return;
     const interval = setInterval(() => {
@@ -374,14 +388,18 @@ export function AiBriefClient() {
 
   // The thread response omits the base64 attachment — fetch the full entry only
   // when the user actually asks for the file.
-  const downloadThreadFile = async (entry: BriefEntry, result: BriefResult) => {
-    setDownloadingId(entry.job_id);
+  const downloadThreadFile = async (
+    entry: BriefEntry,
+    result: BriefResult,
+    fileIndex: number
+  ) => {
+    setDownloadingId(`${entry.job_id}:${fileIndex}`);
     try {
       const res = await fetch(`/api/project-brief/${entry.job_id}`);
       const json = await res.json();
-      const file = normalizeResult(json.data?.result_payload).raw_thread_file;
+      const file = normalizeThreadFiles(json.data?.result_payload)[fileIndex];
       if (!res.ok || !file?.content) {
-        toast.error('Could not download the email thread');
+        toast.error('Could not download that transcript');
         return;
       }
       const bytes = Uint8Array.from(atob(file.content), (c) => c.charCodeAt(0));
@@ -389,11 +407,11 @@ export function AiBriefClient() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = file.filename || `${result.project_id}_email_thread.md`;
+      a.download = file.filename || `${result.project_id}_${file.source}_thread.md`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err: any) {
-      toast.error('Could not download the email thread', { description: err.message });
+      toast.error('Could not download that transcript', { description: err.message });
     } finally {
       setDownloadingId(null);
     }
@@ -489,9 +507,19 @@ export function AiBriefClient() {
               <div className="flex items-center gap-3 py-2">
                 <Loader2 className="h-4 w-4 animate-spin text-gray-400 shrink-0" />
                 <p className="text-sm text-gray-500 flex-1">
-                  Reading the email history and writing the brief… this can take a
-                  few minutes. You can keep working — it'll appear here when it's
-                  done.
+                  {entryAgeMs(entry) < SLOW_AFTER_MS ? (
+                    <>
+                      Reading the email history and writing the brief… this can take
+                      a few minutes. You can keep working — it'll appear here when
+                      it's done.
+                    </>
+                  ) : (
+                    <>
+                      This is taking longer than usual. The workflow may have stopped
+                      without reporting back — it'll be closed automatically, or you
+                      can stop it and ask again.
+                    </>
+                  )}
                 </p>
                 <Button
                   variant="outline"
@@ -527,6 +555,9 @@ export function AiBriefClient() {
                   <p className="text-sm font-medium text-gray-900">
                     This brief failed ({entry.error_code || 'unknown error'})
                   </p>
+                  {result?.message && (
+                    <p className="text-sm text-gray-600 mt-1">{result.message}</p>
+                  )}
                   <p className="text-sm text-gray-500 mt-1">
                     Ask for another brief below to try again.
                   </p>
@@ -552,6 +583,12 @@ export function AiBriefClient() {
                 <p className="text-xs text-gray-400 mb-4">
                   {result.metadata?.email_count != null &&
                     `${result.metadata.email_count} emails analyzed`}
+                  {/* Teams threads feed the same brief, so say when they did —
+                      otherwise their influence on the summary is invisible. */}
+                  {(result.metadata?.teams_thread_count ?? 0) > 0 &&
+                    ` · ${result.metadata!.teams_thread_count} Teams thread${
+                      result.metadata!.teams_thread_count === 1 ? '' : 's'
+                    }`}
                   {result.pm?.mailbox_email && ` · mailbox: ${result.pm.mailbox_email}`}
                 </p>
 
@@ -592,12 +629,13 @@ export function AiBriefClient() {
                   <div className="flex items-start gap-3">
                     <FileText className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
                     <p className="text-sm text-gray-500">
-                      No summary was included with this brief — the full email thread
-                      is available via the download button below
-                      {result.raw_thread_file?.filename
-                        ? ` (${result.raw_thread_file.filename})`
-                        : ''}
-                      .
+                      No summary was included with this brief — the full
+                      {(entry.thread_files?.length ?? 0) > 1
+                        ? ' transcripts are '
+                        : ' transcript is '}
+                      available via the download
+                      {(entry.thread_files?.length ?? 0) > 1 ? ' buttons ' : ' button '}
+                      below.
                     </p>
                   </div>
                 )}
@@ -615,22 +653,24 @@ export function AiBriefClient() {
                       <Copy className="h-4 w-4 mr-1.5" /> Copy
                     </Button>
                   )}
-                  {entry.has_thread_file && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-gray-500"
-                      disabled={downloadingId === entry.job_id}
-                      onClick={() => downloadThreadFile(entry, result)}
-                    >
-                      {downloadingId === entry.job_id ? (
-                        <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                      ) : (
-                        <FileDown className="h-4 w-4 mr-1.5" />
-                      )}
-                      Download thread
-                    </Button>
-                  )}
+                  {entry.has_thread_file &&
+                    (entry.thread_files ?? []).map((f, i) => (
+                      <Button
+                        key={`${entry.job_id}-file-${i}`}
+                        variant="ghost"
+                        size="sm"
+                        className="text-gray-500"
+                        disabled={downloadingId === `${entry.job_id}:${i}`}
+                        onClick={() => downloadThreadFile(entry, result, i)}
+                      >
+                        {downloadingId === `${entry.job_id}:${i}` ? (
+                          <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                        ) : (
+                          <FileDown className="h-4 w-4 mr-1.5" />
+                        )}
+                        {f.source === 'teams' ? 'Teams threads' : 'Email thread'}
+                      </Button>
+                    ))}
                 </div>
               </div>
             )}
