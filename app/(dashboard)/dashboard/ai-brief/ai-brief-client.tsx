@@ -20,6 +20,7 @@ import {
   MoreHorizontal,
   PanelRightClose,
   PanelRightOpen,
+  RotateCw,
   SquarePen,
   Trash2,
   User,
@@ -167,6 +168,7 @@ export function AiBriefClient() {
   const [thread, setThread] = useState<Conversation | null>(null);
   const [threadLoading, setThreadLoading] = useState(false);
   const [stoppingId, setStoppingId] = useState<string | null>(null);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const [deleteEntry, setDeleteEntry] = useState<BriefEntry | null>(null);
@@ -335,6 +337,37 @@ export function AiBriefClient() {
     }
   };
 
+  // Re-run a brief that failed. There is no way to resume the original job —
+  // the workflow reports terminal states only — so this queues a fresh one for
+  // the same project and leaves the failed entry in the thread as the record of
+  // what happened.
+  const retryEntry = async (entry: BriefEntry) => {
+    const projectId = entry.request?.project_id ?? thread?.project_id;
+    if (!projectId) return;
+    setRetryingId(entry.job_id);
+    try {
+      const res = await fetch('/api/project-brief', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: projectId })
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error('Could not retry this brief', { description: json.error });
+        return;
+      }
+      setActiveProjectId(projectId);
+      await Promise.all([
+        loadThread(projectId, { silent: thread?.project_id === projectId }),
+        refreshConversations()
+      ]);
+    } catch (err: any) {
+      toast.error('Could not retry this brief', { description: err.message });
+    } finally {
+      setRetryingId(null);
+    }
+  };
+
   const removeEntry = async (entry: BriefEntry) => {
     setDeleting(true);
     try {
@@ -407,8 +440,13 @@ export function AiBriefClient() {
       const a = document.createElement('a');
       a.href = url;
       a.download = file.filename || `${result.project_id}_${file.source}_thread.md`;
+      // The anchor has to be in the document (Firefox ignores a synthetic click
+      // on a detached one), and the blob URL has to outlive the click: the click
+      // only queues the download, so revoking in the same tick cancels it.
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
     } catch (err: any) {
       toast.error('Could not download that transcript', { description: err.message });
     } finally {
@@ -538,12 +576,28 @@ export function AiBriefClient() {
             )}
 
             {entry.status === 'stopped' && (
-              <div className="flex items-center gap-3 py-2">
-                <CircleStop className="h-4 w-4 text-gray-400 shrink-0" />
-                <p className="text-sm text-gray-500">
-                  This brief was stopped. Ask for another one below if you still
-                  need it.
-                </p>
+              <div className="flex items-start gap-3 py-2">
+                <CircleStop className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm text-gray-500">
+                    This brief was stopped. Retry to queue a fresh one for this
+                    project.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3 text-gray-700 rounded-full"
+                    disabled={retryingId === entry.job_id}
+                    onClick={() => retryEntry(entry)}
+                  >
+                    {retryingId === entry.job_id ? (
+                      <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                    ) : (
+                      <RotateCw className="h-4 w-4 mr-1.5" />
+                    )}
+                    Retry brief
+                  </Button>
+                </div>
               </div>
             )}
 
@@ -558,8 +612,23 @@ export function AiBriefClient() {
                     <p className="text-sm text-gray-600 mt-1">{result.message}</p>
                   )}
                   <p className="text-sm text-gray-500 mt-1">
-                    Ask for another brief below to try again.
+                    Retrying queues a fresh brief for this project — the failed
+                    attempt stays here as a record.
                   </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3 text-gray-700 rounded-full"
+                    disabled={retryingId === entry.job_id}
+                    onClick={() => retryEntry(entry)}
+                  >
+                    {retryingId === entry.job_id ? (
+                      <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                    ) : (
+                      <RotateCw className="h-4 w-4 mr-1.5" />
+                    )}
+                    Retry brief
+                  </Button>
                 </div>
               </div>
             )}
@@ -567,10 +636,26 @@ export function AiBriefClient() {
             {entry.status === 'success' && !result && (
               <div className="flex items-start gap-3 py-2">
                 <FileText className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
-                <p className="text-sm text-gray-500">
-                  The workflow completed but its result was delivered to a different
-                  callback URL. Ask for another brief below.
-                </p>
+                <div>
+                  <p className="text-sm text-gray-500">
+                    The workflow completed but its result was delivered to a
+                    different callback URL.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3 text-gray-700 rounded-full"
+                    disabled={retryingId === entry.job_id}
+                    onClick={() => retryEntry(entry)}
+                  >
+                    {retryingId === entry.job_id ? (
+                      <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                    ) : (
+                      <RotateCw className="h-4 w-4 mr-1.5" />
+                    )}
+                    Retry brief
+                  </Button>
+                </div>
               </div>
             )}
 
@@ -640,6 +725,23 @@ export function AiBriefClient() {
                 )}
 
                 <div className="flex items-center justify-end gap-1 mt-4 pt-3 border-t border-gray-200">
+                  {/* Regenerate: queues a fresh brief for the same project and
+                      leaves this one in the thread, so the two can be compared. */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-gray-500"
+                    disabled={retryingId === entry.job_id}
+                    onClick={() => retryEntry(entry)}
+                    aria-label="Generate this brief again"
+                  >
+                    {retryingId === entry.job_id ? (
+                      <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                    ) : (
+                      <RotateCw className="h-4 w-4 mr-1.5" />
+                    )}
+                    Retry
+                  </Button>
                   {(structured || plainText) && (
                     <Button
                       variant="ghost"

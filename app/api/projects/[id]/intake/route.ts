@@ -52,16 +52,58 @@ export async function GET(
       .eq('project_id', project.project_id)
       .maybeSingle();
 
+    // Every attempt ever made, newest first. The ledger above only carries the
+    // current state; this is what lets the panel show that a project failed
+    // twice before it succeeded instead of silently overwriting the history.
+    const { data: history } = await supabaseAdmin
+      .from('project_intake_run_history')
+      .select('run_id, attempt, status, last_error, started_at, completed_at')
+      .eq('project_id', project.project_id)
+      .order('started_at', { ascending: false });
+
     const state = run
       ? run.status
       : project.questionnaire_received === 'Yes'
         ? 'not_started'
         : 'pending_questionnaire';
 
+    // `orders` is the idempotency ledger the workflow writes as it goes, keyed
+    // by product name:
+    //   { "3D floor plan": { order_pk, order_id, clickup_task_id, clickup_url } }
+    // Reading it back is the only way to see what a run actually produced, and
+    // it doubles as progress: a product with an order but no clickup_url is a
+    // run that stopped between the two.
+    const ledger = (run?.orders ?? {}) as Record<string, any>;
+    const products = Object.entries(ledger).map(([product_name, entry]) => ({
+      product_name,
+      order_id: entry?.order_id ?? null,
+      clickup_task_id: entry?.clickup_task_id ?? null,
+      clickup_url: entry?.clickup_url ?? null
+    }));
+
+    const progress = {
+      orders_claimed: products.length,
+      clickup_created: products.filter((p) => p.clickup_url).length
+    };
+
+    // The sweeper fails a run that has not reported back within 30 minutes.
+    // Surfacing that boundary lets the panel warn before the sweeper acts,
+    // rather than leaving a dead run looking healthy.
+    const STALE_AFTER_MINUTES = 30;
+    const runningFor =
+      state === 'processing' && run?.triggered_at
+        ? (Date.now() - new Date(run.triggered_at).getTime()) / 60000
+        : null;
+
     return NextResponse.json(
       {
         state,
         intake: run ?? null,
+        products,
+        progress,
+        history: history ?? [],
+        stale_after_minutes: STALE_AFTER_MINUTES,
+        is_stale: runningFor !== null && runningFor > STALE_AFTER_MINUTES,
         // The brief page mounts the panel without knowing the current flag, so
         // it is returned here rather than fetched separately.
         questionnaire_received: project.questionnaire_received,
