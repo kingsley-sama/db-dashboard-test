@@ -254,6 +254,7 @@ export function CreateOrderDialog({
                   <option value="Warih">Warih</option>
                   <option value="Alamin">Alamin</option>
                   <option value="Aliyu">Aliyu</option>
+                  <option value="Takoua">Takoua</option>
                 </select>
               </div>
               <div>
