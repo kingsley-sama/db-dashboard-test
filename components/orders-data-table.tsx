@@ -18,6 +18,7 @@ import {
   defaultFilter,
   isFilterActive,
 } from "@/components/data-table-filters"
+import { useRowHighlight, rowHighlightShadow } from "@/lib/table-utils"
 import {
   ORDER_STATUSES,
   ORDER_STATUS_FALLBACK,
@@ -188,6 +189,18 @@ export function OrdersDataTable({
   const floatingScrollRef = useRef<HTMLDivElement>(null)
   const [stuck, setStuck] = useState(false)
   const [scrolledX, setScrolledX] = useState(false)
+  // Double-click any cell to mark its row.
+  const { highlightedRow, toggleRow } = useRowHighlight()
+
+  // The sticky first column's edge, plus the drop shadow it casts once the
+  // table is scrolled sideways. Shared by that column's header, filter and body
+  // cells so the crosshair tint can be appended behind it in one place.
+  const stickyEdgeShadow = (isFirst: boolean) =>
+    isFirst
+      ? scrolledX
+        ? 'inset -1px 0 0 #cbd5e1, 6px 0 8px -4px rgba(0, 0, 0, 0.18)'
+        : 'inset -1px 0 0 #cbd5e1'
+      : undefined
   const [colWidths, setColWidths] = useState<number[]>([])
   const [tableWidth, setTableWidth] = useState(0)
   const showActions = Boolean(onEdit || onDelete)
@@ -324,13 +337,7 @@ export function OrdersDataTable({
               backgroundColor: '#f8f8f8',
               color: '#012e64',
               borderRight: isFirst ? undefined : '1px solid #cbd5e1',
-              ...(isFirst
-                ? {
-                    boxShadow: scrolledX
-                      ? 'inset -1px 0 0 #cbd5e1, 6px 0 8px -4px rgba(0, 0, 0, 0.18)'
-                      : 'inset -1px 0 0 #cbd5e1',
-                  }
-                : {}),
+              boxShadow: stickyEdgeShadow(isFirst),
               ...(fixedWidths && colWidths[i]
                 ? { width: colWidths[i], minWidth: colWidths[i], maxWidth: colWidths[i] }
                 : {}),
@@ -388,13 +395,7 @@ export function OrdersDataTable({
             style={{
               backgroundColor: '#f8f8f8',
               borderRight: isFirst ? undefined : '1px solid #cbd5e1',
-              ...(isFirst
-                ? {
-                    boxShadow: scrolledX
-                      ? 'inset -1px 0 0 #cbd5e1, 6px 0 8px -4px rgba(0, 0, 0, 0.18)'
-                      : 'inset -1px 0 0 #cbd5e1',
-                  }
-                : {}),
+              boxShadow: stickyEdgeShadow(isFirst),
             }}
           >
             {filter.kind === "multi" ? (
@@ -502,6 +503,10 @@ export function OrdersDataTable({
               const orderIdBg = supplierPaid
                 ? (idx % 2 === 0 ? '#f2fef8' : '#e8fdf2')
                 : rowBg
+              // Ticked for export, or double-clicked — either one marks the row
+              // so it stays readable as a unit across the full table width.
+              const rowHighlighted =
+                Boolean(selectedIds?.has(order.id)) || highlightedRow === order.id
               return (
               <tr
                 key={order.id}
@@ -621,18 +626,19 @@ export function OrdersDataTable({
                   return (
                     <td
                       key={field.key}
+                      onDoubleClick={() => toggleRow(order.id)}
                       className={`${field.width} px-4 py-3 whitespace-nowrap${isFirst ? ' sticky left-0 z-10' : ''}`}
                       style={{
                         color: '#012e64',
+                        // Cells are a double-click target, not prose: the I-beam
+                        // and the word-selection it invites both fight the
+                        // gesture, so the pointer stays an arrow and the text
+                        // stays unselectable.
+                        cursor: 'default',
+                        userSelect: 'none',
                         borderRight: isFirst ? undefined : '1px solid #cbd5e1',
-                        ...(isFirst
-                          ? {
-                              backgroundColor: orderIdBg,
-                              boxShadow: scrolledX
-                                ? 'inset -1px 0 0 #cbd5e1, 6px 0 8px -4px rgba(0, 0, 0, 0.18)'
-                                : 'inset -1px 0 0 #cbd5e1',
-                            }
-                          : {}),
+                        boxShadow: rowHighlightShadow(rowHighlighted, stickyEdgeShadow(isFirst)),
+                        ...(isFirst ? { backgroundColor: orderIdBg } : {}),
                       }}
                       title={String(order[field.key] || '')}
                     >
@@ -658,7 +664,8 @@ export function OrdersDataTable({
                     className="min-w-[110px] px-4 py-3 sticky right-0 z-10 text-center"
                     style={{
                       backgroundColor: rowBg,
-                      borderLeft: '2px solid #e5e5e5'
+                      borderLeft: '2px solid #e5e5e5',
+                      boxShadow: rowHighlightShadow(rowHighlighted),
                     }}
                   >
                     <div className="flex items-center justify-center gap-1">
