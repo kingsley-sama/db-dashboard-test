@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { isAbortError, readJsonResponse } from "@/lib/table-utils"
 import { Card } from "@/components/ui/card"
 import { Package, CheckCircle, AlertTriangle, AlertOctagon } from "lucide-react"
 import { ORDER_STATUSES, ORDER_STATUS_STYLES, type OrderStatus } from "@/lib/order-status"
@@ -74,29 +75,36 @@ export function StatusStatTiles({
   const [counts, setCounts] = useState<Record<string, number>>({})
 
   useEffect(() => {
-    let cancelled = false
+    // One controller for the batch: a new search supersedes all four counts, and
+    // aborting drops the queries behind them instead of letting them finish for
+    // a render that will never happen.
+    const controller = new AbortController()
 
     const fetchCount = async (status: string) => {
-      const params = new URLSearchParams({ page: "1", limit: "1" })
+      // limit=0 asks the endpoint for the count alone. The tiles never render
+      // rows, so pulling a page of them was four wasted reads per keystroke.
+      const params = new URLSearchParams({ page: "1", limit: "0" })
       if (status) params.append("status", status)
       if (search) params.append("search", search)
       if (columnFilters) params.append("columnFilters", columnFilters)
-      const response = await fetch(`${apiPath}?${params.toString()}`)
-      const result = await response.json()
+      const response = await fetch(`${apiPath}?${params.toString()}`, {
+        signal: controller.signal,
+      })
+      const result = await readJsonResponse(response)
       if (!response.ok) throw new Error(result.error || "Failed to fetch counts")
       return result.pagination?.total ?? 0
     }
 
     Promise.all(tiles.map((tile) => fetchCount(tile.value)))
       .then((totals) => {
-        if (cancelled) return
         setCounts(Object.fromEntries(tiles.map((tile, i) => [tile.value, totals[i]])))
       })
-      .catch((err) => console.error("Error fetching status counts:", err))
+      .catch((err) => {
+        if (isAbortError(err)) return
+        console.error("Error fetching status counts:", err)
+      })
 
-    return () => {
-      cancelled = true
-    }
+    return () => controller.abort()
   }, [apiPath, refreshKey, search, columnFilters])
 
   return (

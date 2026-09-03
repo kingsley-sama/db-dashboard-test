@@ -11,15 +11,32 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { usePersistedTableState, fetchAllRows, downloadCsv } from "@/lib/table-utils"
+import {
+  usePersistedTableState,
+  useDebouncedTableQuery,
+  useLatestRequest,
+  isAbortError,
+  readJsonResponse,
+  fetchAllRows,
+  downloadCsv,
+} from "@/lib/table-utils"
 import { serializeColumnFilters } from "@/lib/column-filters"
 import { ProjectsDataTable } from "@/components/projects-data-table"
 import { CreateProjectDialog } from "@/components/create-project-dialog"
 import { EditProjectDialog } from "@/components/edit-project-dialog"
 
-export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => void }) {
+export function ProjectsTable({
+  onProjectsChange,
+}: {
+  /** Called after a row is created, edited or deleted — not after a re-read. */
+  onProjectsChange?: () => void
+}) {
   const [projects, setProjects] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+  // `loaded` gates the one full-page spinner, on the very first request.
+  // `refreshing` is every request after that, which runs *under* the table
+  // rather than replacing it.
+  const [loaded, setLoaded] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState("")
   const [exporting, setExporting] = useState(false)
   // Row selection for export. Stores full row objects keyed by id so selections
@@ -52,28 +69,28 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
   const serializedFilters = useMemo(() => serializeColumnFilters(columnFilters), [columnFilters])
 
   // Typing in a filter or the search box shouldn't fire a query per keystroke.
-  const [debouncedSearch, setDebouncedSearch] = useState(searchTerm)
-  const [debouncedFilters, setDebouncedFilters] = useState(serializedFilters)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchTerm)
-      setDebouncedFilters(serializedFilters)
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [searchTerm, serializedFilters])
+  // These are the values the requests actually carry.
+  const {
+    search: appliedSearch,
+    columnFilters: appliedFilters,
+    hydrated,
+  } = useDebouncedTableQuery(ready, searchTerm, serializedFilters)
 
-  const settled = debouncedSearch === searchTerm && debouncedFilters === serializedFilters
-
-  // Fetch projects when page, search, or filter changes (once saved state is
-  // restored). Waiting for `settled` keeps the restored state from firing an
-  // extra request with the pre-restore values.
+  // Fetch projects when the page or the applied search/filters change.
+  // `hydrated` holds this off until the saved state has been restored, so the
+  // first request already carries it instead of firing twice.
   useEffect(() => {
-    if (!ready || !settled) return
+    if (!hydrated) return
     fetchProjects(currentPage)
-  }, [ready, settled, currentPage, debouncedSearch, debouncedFilters])
+  }, [hydrated, currentPage, appliedSearch, appliedFilters])
+
+  const beginRequest = useLatestRequest()
 
   const fetchProjects = async (page = 1) => {
-    setLoading(true)
+    // Supersedes whatever is in flight: responses arrive out of order, and the
+    // last one to land — not the last one requested — would otherwise win.
+    const { signal, isCurrent } = beginRequest()
+    setRefreshing(true)
     setError("")
     try {
       const params = new URLSearchParams({
@@ -81,23 +98,36 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
         limit: '500',
       })
 
-      if (searchTerm) params.append('search', searchTerm)
-      if (serializedFilters) params.append('columnFilters', serializedFilters)
+      // The applied values, not the raw inputs: the request has to match the
+      // state that triggered it, or a keystroke landing mid-flight sends a
+      // search the table isn't showing yet.
+      if (appliedSearch) params.append('search', appliedSearch)
+      if (appliedFilters) params.append('columnFilters', appliedFilters)
 
-      const response = await fetch(`/api/projects?${params.toString()}`)
-      const result = await response.json()
+      const response = await fetch(`/api/projects?${params.toString()}`, { signal })
+      const result = await readJsonResponse(response)
+      if (!isCurrent()) return
 
       if (!response.ok) {
         setError(result.error || 'Failed to fetch projects')
       } else {
         setProjects(result.data || [])
         setPagination(result.pagination || { page: 1, limit: 500, total: 0, totalPages: 0 })
-        onProjectsChange?.()
+        // Deliberately NOT onProjectsChange(): that reports a *mutation*, and
+        // the page answers it by re-reading /api/projects for its stat cards.
+        // Firing it here meant every search pulled the whole unfiltered first
+        // page a second time.
       }
     } catch (err: any) {
+      if (isAbortError(err) || !isCurrent()) return
       setError(err.message)
     } finally {
-      setLoading(false)
+      if (isCurrent()) {
+        setRefreshing(false)
+        // Even a failed first request retires the spinner — the error alert and
+        // the table's own empty state say more than a spinner that never stops.
+        setLoaded(true)
+      }
     }
   }
 
@@ -116,7 +146,7 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
       const response = await fetch(
         `/api/projects/filter-options?column=${encodeURIComponent(column)}`
       )
-      const result = await response.json()
+      const result = await readJsonResponse(response)
       if (!response.ok) throw new Error(result.error || "Failed to load filter options")
       setFilterOptions((prev) => ({ ...prev, [column]: result.values || [] }))
     } catch {
@@ -125,7 +155,9 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
     }
   }, [])
 
-  const hasFilters = Boolean(searchTerm || serializedFilters)
+  // The applied values, so the label and the export agree with the rows and the
+  // total on screen rather than with a search still inside the debounce.
+  const hasFilters = Boolean(appliedSearch || appliedFilters)
 
   const handleExportCsv = async (scope: "filtered" | "all" | "selected") => {
     setExporting(true)
@@ -137,7 +169,7 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
           : await fetchAllRows(
               "/api/projects",
               scope === "filtered"
-                ? { search: searchTerm, columnFilters: serializedFilters }
+                ? { search: appliedSearch, columnFilters: appliedFilters }
                 : {}
             )
       if (rows.length === 0) {
@@ -189,7 +221,7 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
         body: JSON.stringify(newProject)
       })
 
-      const result = await response.json()
+      const result = await readJsonResponse(response)
 
       if (!response.ok) {
         return { success: false, error: result.error || 'Failed to create project' }
@@ -212,7 +244,7 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
         body: JSON.stringify(updatedProject)
       })
 
-      const result = await response.json()
+      const result = await readJsonResponse(response)
 
       if (!response.ok) {
         return { success: false, error: result.error || 'Failed to update project' }
@@ -235,7 +267,7 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
       const response = await fetch(`/api/projects/${deletingProject.id}`, {
         method: 'DELETE',
       })
-      const result = await response.json()
+      const result = await readJsonResponse(response)
 
       if (!response.ok) {
         // Surface the underlying error (e.g. project still has orders)
@@ -364,10 +396,11 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
             <Button
               onClick={() => fetchProjects(currentPage)}
               variant="outline"
+              title="Refresh"
               className="hover:bg-gray-50"
               style={{ borderColor: '#8d9499', color: '#012e64' }}
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className={`w-4 h-4${refreshing ? ' animate-spin' : ''}`} />
             </Button>
             <Button
               onClick={toggleSelectMode}
@@ -444,8 +477,16 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
 
         {/* Current Page Info */}
         <div className="flex items-center justify-between text-sm">
-          <span style={{ color: '#5d6b88' }}>
+          <span className="flex items-center gap-2" style={{ color: '#5d6b88' }}>
             Showing <span className="font-semibold" style={{ color: '#012e64' }}>{projects.length}</span> projects on this page
+            {/* The only thing that moves while re-querying — the rows below stay
+                put so the header's filter inputs keep focus. */}
+            {refreshing && loaded && (
+              <span className="flex items-center gap-1.5" style={{ color: '#8d9499' }}>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Updating...
+              </span>
+            )}
           </span>
           {pagination.totalPages > 1 && (
             <span style={{ color: '#5d6b88' }}>
@@ -460,25 +501,21 @@ export function ProjectsTable({ onProjectsChange }: { onProjectsChange?: () => v
       <PaginationControls />
 
       {/* Table */}
-      <div className="flex-1">
-        {loading ? (
+      <div className="flex-1" aria-busy={refreshing}>
+        {!loaded ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
               <div className="w-12 h-12 rounded-full animate-spin mx-auto mb-4" style={{ border: '3px solid #e5e5e5', borderTopColor: '#012e64' }}></div>
               <p style={{ color: '#5d6b88' }}>Loading projects...</p>
             </div>
           </div>
-        ) : projects.length === 0 && !serializedFilters ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <p className="text-lg font-medium" style={{ color: '#012e64' }}>No projects found</p>
-              <p className="text-sm mt-1" style={{ color: '#5d6b88' }}>Try adjusting your search or filters</p>
-            </div>
-          </div>
         ) : (
-          // With column filters active the table stays mounted even with no
-          // rows: the filter inputs live in its header, so hiding it would
-          // strand the user with no way to clear them.
+          // Past the first load the table is never swapped out — not for a
+          // re-query and not for an empty result. Its header carries the search
+          // and column filter inputs, so unmounting it pulled the caret out of
+          // the box mid-word, dropped the horizontal scroll position, and left
+          // no way to clear the filter that emptied the table. Zero rows are
+          // handled by the table's own empty state, below the header.
           <ProjectsDataTable
             projects={projects}
             onEdit={setEditingProject}

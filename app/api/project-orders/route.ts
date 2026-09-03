@@ -7,6 +7,12 @@ import {
   buildSearchFilter,
   parseColumnFilters,
 } from '@/lib/column-filters';
+import {
+  listPagination,
+  parseListParams,
+  runListQuery,
+  type CountOptions,
+} from '@/lib/list-query';
 
 // Text columns of project_orders_view that the search box matches against.
 // Several view columns (PM, project_status, project_type, construction_type,
@@ -44,9 +50,7 @@ export async function GET(request: NextRequest) {
     }
 
     const searchParams = request.nextUrl.searchParams;
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '500');
-    const offset = (page - 1) * limit;
+    const { page, limit, offset, countOnly } = parseListParams(searchParams);
     const search = searchParams.get('search') || '';
     // Per-column header filters. Unknown columns are dropped by the whitelist.
     const columnFilters = parseColumnFilters(
@@ -54,31 +58,31 @@ export async function GET(request: NextRequest) {
       PROJECT_ORDERS_FILTER_COLUMNS
     );
 
-    // One filter chain, applied identically to the count and the data query —
-    // they must agree or the row total contradicts the rows on screen.
-    const buildQuery = (columns: string, options?: { count: 'exact'; head: true }) => {
-      let query = supabaseAdmin.from('project_orders_view').select(columns, options);
+    // One filter chain for every shape of this request — the page of rows, the
+    // total that comes back with it, and the count-only variant the dashboard
+    // tiles ask for. They must agree or the total contradicts the rows on screen.
+    const buildQuery = (options?: CountOptions) => {
+      let query = supabaseAdmin.from('project_orders_view').select('*', options);
       if (search) {
         query = query.or(buildSearchFilter(SEARCH_COLUMNS, search));
       }
       return applyColumnFilters(query, columnFilters, PROJECT_ORDERS_FILTER_COLUMNS);
     };
 
-    const { count, error: countError } = await buildQuery('id', {
-      count: 'exact',
-      head: true,
+    // One round trip: the row query carries the total for the same filters.
+    const result = await runListQuery({
+      limit,
+      offset,
+      countOnly,
+      buildQuery,
+      order: (query) =>
+        query
+          .order('created_at', { ascending: false })
+          .order('order_pk', { ascending: true }),
     });
-    if (countError) {
-      return NextResponse.json({ error: countError.message }, { status: 500 });
-    }
 
-    const { data, error } = await buildQuery('*')
-      .order('created_at', { ascending: false })
-      .order('order_pk', { ascending: true })
-      .range(offset, offset + limit - 1);
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: 500 });
     }
 
     // `id` in the view is the *project* PK, so a project with several orders
@@ -86,7 +90,7 @@ export async function GET(request: NextRequest) {
     // selection by `id`, so give every row a unique composite key and keep the
     // originals under explicit names. Projects with no orders have a null
     // order_pk.
-    const rows = (data || []).map((row: any) => ({
+    const rows = result.rows.map((row: any) => ({
       ...row,
       id: `${row.id}-${row.order_pk ?? 'none'}`,
       project_pk: row.id,
@@ -95,12 +99,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         data: rows,
-        pagination: {
-          page,
-          limit,
-          total: count || 0,
-          totalPages: Math.ceil((count || 0) / limit),
-        },
+        pagination: listPagination(page, limit, result.total),
       },
       { status: 200 }
     );

@@ -8,6 +8,12 @@ import {
   needsInnerJoin,
   parseColumnFilters,
 } from '@/lib/column-filters';
+import {
+  listPagination,
+  parseListParams,
+  runListQuery,
+  type CountOptions,
+} from '@/lib/list-query';
 
 // Text columns the search box matches against.
 const SEARCH_COLUMNS = [
@@ -34,9 +40,7 @@ export async function GET(request: NextRequest) {
 
     // Get pagination and search parameters from query string
     const searchParams = request.nextUrl.searchParams;
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '500');
-    const offset = (page - 1) * limit;
+    const { page, limit, offset, countOnly } = parseListParams(searchParams);
     const search = searchParams.get('search') || '';
     const filterPM = searchParams.get('filterPM') || '';
     const filterPmType = searchParams.get('filterPmType') || '';
@@ -55,9 +59,10 @@ export async function GET(request: NextRequest) {
       ? 'orders!inner(project_completion_date)'
       : 'orders(project_completion_date)';
 
-    // One filter chain, applied identically to the count and the data query —
-    // they must agree or the row total contradicts the rows on screen.
-    const buildQuery = (options?: { count: 'exact'; head: true }) => {
+    // One filter chain for every shape of this request — the page of rows, the
+    // total that comes back with it, and the count-only variant the dashboard
+    // tiles ask for. They must agree or the total contradicts the rows on screen.
+    const buildQuery = (options?: CountOptions) => {
       let query = supabaseAdmin.from('projects').select(`*, ${ordersEmbed}`, options);
 
       if (search) {
@@ -76,22 +81,22 @@ export async function GET(request: NextRequest) {
       return applyColumnFilters(query, columnFilters, PROJECTS_FILTER_COLUMNS);
     };
 
-    const { count, error: countError } = await buildQuery({ count: 'exact', head: true });
-    if (countError) {
-      return NextResponse.json({ error: countError.message }, { status: 500 });
-    }
+    // One round trip: the row query carries the total for the same filters.
+    const result = await runListQuery({
+      limit,
+      offset,
+      countOnly,
+      buildQuery,
+      order: (query) => query.order('created_at', { ascending: false }),
+    });
 
-    const { data, error } = await buildQuery()
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: 500 });
     }
 
     // Replace projects.project_completion_date with the latest one set on the
     // project's orders (a project can have several orders).
-    const flattenedData = (data || []).map((project: any) => {
+    const flattenedData = result.rows.map((project: any) => {
       const { orders, ...rest } = project;
       const orderDates = (orders || [])
         .map((o: any) => o.project_completion_date)
@@ -105,12 +110,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       data: flattenedData,
-      pagination: {
-        page,
-        limit,
-        total: count || 0,
-        totalPages: Math.ceil((count || 0) / limit)
-      }
+      pagination: listPagination(page, limit, result.total)
     }, { status: 200 });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
