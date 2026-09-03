@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { X, AlertCircle, CheckCircle2, XCircle, Loader2 } from "lucide-react"
 import { Textarea } from "@/components/ui/textarea"
 import { ORDER_STATUSES } from "@/lib/order-status"
+import { useModalEscape, blockEnterKey } from "@/lib/modal-keyboard"
 
 interface ProductCode {
   id: number
@@ -43,6 +44,10 @@ export function CreateOrderDialog({
   })
   const [productCodes, setProductCodes] = useState<ProductCode[]>([])
   const [loading, setLoading] = useState(false)
+  // Guards against a double submit. `loading` can't do this job: three clicks
+  // in the same tick all read it as false, because none of them has re-rendered
+  // yet. A ref updates synchronously, so the second click sees the first.
+  const savingRef = useRef(false)
   const [error, setError] = useState("")
   const [loadingProducts, setLoadingProducts] = useState(true)
   const [projectCheck, setProjectCheck] = useState<{
@@ -115,8 +120,14 @@ export function CreateOrderDialog({
     })
   }
 
+  // Escape closes the modal; `loading` holds it shut mid-save, as Cancel is.
+  useModalEscape(onClose, loading)
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    // Both Save buttons are disabled while saving; this closes the gap between
+    // the click and the re-render that disables them.
+    if (savingRef.current) return
 
     if (projectCheck.status === "not_found") {
       setError("Project ID does not exist. Please enter a valid project.")
@@ -127,6 +138,7 @@ export function CreateOrderDialog({
       return
     }
 
+    savingRef.current = true
     setLoading(true)
     setError("")
 
@@ -151,6 +163,7 @@ export function CreateOrderDialog({
     }
 
     const result = await onCreate(newOrder)
+    savingRef.current = false
     setLoading(false)
     
     if (!result.success && result.error) {
@@ -159,7 +172,10 @@ export function CreateOrderDialog({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      onKeyDown={blockEnterKey}
+    >
       <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white shadow-2xl" style={{ borderColor: '#e5e5e5' }}>
         <CardHeader className="flex flex-row items-center justify-between bg-white" style={{ borderBottom: '1px solid #e5e5e5' }}>
           <div>

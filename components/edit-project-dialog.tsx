@@ -2,13 +2,14 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { X, AlertCircle, CheckCircle2, XCircle, Loader2 } from "lucide-react"
 import { ProjectIntakePanel } from "@/components/project-intake-panel"
+import { useModalEscape, blockEnterKey } from "@/lib/modal-keyboard"
 
 type EnumMap = Record<string, string[]>
 
@@ -33,6 +34,10 @@ export function EditProjectDialog({
   })
   const [enums, setEnums] = useState<EnumMap>({})
   const [loading, setLoading] = useState(false)
+  // Guards against a double submit. `loading` can't do this job: three clicks
+  // in the same tick all read it as false, because none of them has re-rendered
+  // yet. A ref updates synchronously, so the second click sees the first.
+  const savingRef = useRef(false)
   const [error, setError] = useState("")
   const [emailCheck, setEmailCheck] = useState<{
     status: RefStatus
@@ -157,8 +162,14 @@ export function EditProjectDialog({
     })
   }
 
+  // Escape closes the modal; `loading` holds it shut mid-save, as Cancel is.
+  useModalEscape(onClose, loading)
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    // Both Save buttons are disabled while saving; this closes the gap between
+    // the click and the re-render that disables them.
+    if (savingRef.current) return
 
     if (emailCheck.status === "checking" || clientCheck.status === "checking") {
       setError("Still verifying entries, please wait...")
@@ -173,6 +184,7 @@ export function EditProjectDialog({
       return
     }
 
+    savingRef.current = true
     setLoading(true)
     setError("")
 
@@ -214,6 +226,7 @@ export function EditProjectDialog({
     // client_rating and person_id are derived by DB triggers.
 
     const result = await onUpdate(updatedProject)
+    savingRef.current = false
     setLoading(false)
 
     if (!result.success && result.error) {
@@ -252,16 +265,47 @@ export function EditProjectDialog({
     status === "found" ? "#16a34a" : status === "not_found" ? "#dc2626" : "#8d9499"
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white shadow-2xl" style={{ borderColor: '#e5e5e5' }}>
-        <CardHeader className="flex flex-row items-center justify-between bg-white" style={{ borderBottom: '1px solid #e5e5e5' }}>
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      onKeyDown={blockEnterKey}
+    >
+      <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white shadow-2xl pt-0" style={{ borderColor: '#e5e5e5' }}>
+        {/* Sticky: the Card is the scroll container, so this pins to the top of
+            it and the record being edited stays named however far down the form
+            the user scrolls. It keeps its place in the flow, so it never covers
+            the fields — they scroll underneath it.
+
+            A sticky box is clamped to its containing block, so while the Card
+            kept its own pt-6 the header could not rise above it — it pinned
+            24px down and the form scrolled visibly through the gap. The Card
+            drops that padding (pt-0) and the header carries it instead. */}
+        <CardHeader
+          className="sticky top-0 z-20 pt-6 flex flex-row items-center justify-between bg-white"
+          style={{ borderBottom: '1px solid #e5e5e5' }}
+        >
           <div>
             <CardTitle style={{ color: '#012e64' }}>Edit Project</CardTitle>
             <CardDescription style={{ color: '#5d6b88' }}>Project {project.project_id}</CardDescription>
           </div>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded transition-colors" style={{ color: '#5d6b88' }}>
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Submits the form below by id, so this and the Save at the bottom
+                are the same button in two places: same handler, same native
+                validation, same disabled-while-saving state. A short form
+                doesn't need it; a long one shouldn't need scrolling to save. */}
+            <Button
+              type="submit"
+              form="edit-project-form"
+              disabled={loading}
+              size="sm"
+              className="text-white"
+              style={{ backgroundColor: '#012e64' }}
+            >
+              {loading ? "Updating..." : "Save"}
+            </Button>
+            <button type="button" onClick={onClose} className="p-1 hover:bg-gray-100 rounded transition-colors" style={{ color: '#5d6b88' }}>
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </CardHeader>
         <CardContent>
           {error && (
@@ -279,7 +323,7 @@ export function EditProjectDialog({
               </AlertDescription>
             </Alert>
           )}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form id="edit-project-form" onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium" style={{ color: '#012e64' }}>Project ID</label>
