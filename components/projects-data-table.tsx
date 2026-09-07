@@ -4,12 +4,11 @@ import { Edit2, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
-  ColumnFilter,
-  DateRangeFilter,
-  MultiSelectFilter,
-  NumericFilter,
+  ActiveFilterChips,
+  ColumnFilterControl,
   defaultFilter,
   isFilterActive,
+  type ColumnFilter,
 } from "@/components/data-table-filters"
 import { useRowHighlight, rowHighlightShadow } from "@/lib/table-utils"
 
@@ -216,6 +215,17 @@ export function ProjectsDataTable({
   const clearFilters = () => onColumnFiltersChange({})
   const activeFilterCount = Object.values(columnFilters).filter(isFilterActive).length
 
+  // Bring a column's filter into view when its chip is clicked — the table is
+  // wider than the screen, so a chip has to be able to take you to its input.
+  const focusColumn = (key: string) => {
+    const container = scrollRef.current
+    const cell = container?.querySelector<HTMLElement>(`[data-filter-column="${CSS.escape(key)}"]`)
+    if (!container || !cell) return
+    const target = cell.offsetLeft - container.clientWidth / 2 + cell.offsetWidth / 2
+    container.scrollTo({ left: Math.max(0, target), behavior: "smooth" })
+    cell.querySelector<HTMLElement>("input:not([disabled]), button")?.focus({ preventScroll: true })
+  }
+
   // Select-all applies to the rows on the current page.
   const allFilteredSelected =
     projects.length > 0 && projects.every((p) => selectedIds?.has(p.id))
@@ -284,6 +294,7 @@ export function ProjectsDataTable({
         return (
           <th
             key={field.key}
+            data-filter-column={field.key}
             className={`${field.width} px-2 py-2 align-top font-normal${isFirst ? ' sticky left-0 z-40' : ''}`}
             style={{
               backgroundColor: '#f8f8f8',
@@ -291,28 +302,13 @@ export function ProjectsDataTable({
               boxShadow: stickyEdgeShadow(isFirst),
             }}
           >
-            {filter.kind === "multi" ? (
-              <MultiSelectFilter
-                options={filterOptions[field.key] ?? []}
-                values={filter.values}
-                onChange={(values) => setColumnFilter(field.key, { kind: "multi", values })}
-                onOpen={() => onRequestFilterOptions?.(field.key)}
-              />
-            ) : filter.kind === "numeric" ? (
-              <NumericFilter filter={filter} onChange={(f) => setColumnFilter(field.key, f)} />
-            ) : filter.kind === "date" ? (
-              <DateRangeFilter filter={filter} onChange={(f) => setColumnFilter(field.key, f)} />
-            ) : (
-              <input
-                type="text"
-                value={filter.value}
-                onChange={(e) => setColumnFilter(field.key, { kind: "text", value: e.target.value })}
-                placeholder="Contains…"
-                title="Filter: shows rows containing this text"
-                className="w-full min-w-0 px-2 py-1 rounded text-xs bg-white"
-                style={{ border: '1px solid #cbd5e1', color: '#012e64' }}
-              />
-            )}
+            <ColumnFilterControl
+              filter={filter}
+              label={field.label}
+              onChange={(f) => setColumnFilter(field.key, f)}
+              options={filterOptions[field.key] ?? []}
+              onOpenOptions={() => onRequestFilterOptions?.(field.key)}
+            />
           </th>
         )
       })}
@@ -338,35 +334,45 @@ export function ProjectsDataTable({
     <div className="relative">
       {activeFilterCount > 0 && (
         <div
-          className="flex items-center justify-between px-4 py-2 text-sm"
+          className="px-4 py-2 text-sm space-y-2"
           style={{ backgroundColor: '#f0f7ff', borderBottom: '1px solid #d0e7ff', color: '#5d6b88' }}
         >
-          <span>
-            {totalRows !== undefined ? (
-              <>
-                <span className="font-semibold" style={{ color: '#012e64' }}>
-                  {totalRows.toLocaleString()}
-                </span>{" "}
-                matching {totalRows === 1 ? 'project' : 'projects'} across all pages
-              </>
-            ) : (
-              <>
-                <span className="font-semibold" style={{ color: '#012e64' }}>
-                  {projects.length}
-                </span>{" "}
-                matching {projects.length === 1 ? 'project' : 'projects'}
-              </>
-            )}
-            {" "}({activeFilterCount} column {activeFilterCount === 1 ? 'filter' : 'filters'})
-          </span>
-          <button
-            onClick={clearFilters}
-            className="flex items-center gap-1 font-medium hover:underline"
-            style={{ color: '#012e64' }}
-          >
-            <X className="w-4 h-4" />
-            Clear filters
-          </button>
+          <div className="flex items-center justify-between gap-3">
+            <span>
+              {totalRows !== undefined ? (
+                <>
+                  <span className="font-semibold" style={{ color: '#012e64' }}>
+                    {totalRows.toLocaleString()}
+                  </span>{" "}
+                  matching {totalRows === 1 ? 'project' : 'projects'} across all pages
+                </>
+              ) : (
+                <>
+                  <span className="font-semibold" style={{ color: '#012e64' }}>
+                    {projects.length}
+                  </span>{" "}
+                  matching {projects.length === 1 ? 'project' : 'projects'}
+                </>
+              )}
+              {" "}({activeFilterCount} column {activeFilterCount === 1 ? 'filter' : 'filters'})
+            </span>
+            <button
+              onClick={clearFilters}
+              className="flex items-center gap-1 font-medium hover:underline shrink-0"
+              style={{ color: '#012e64' }}
+            >
+              <X className="w-4 h-4" />
+              Clear filters
+            </button>
+          </div>
+          {/* Every active condition, spelled out; each chip drops only its own
+              filter. */}
+          <ActiveFilterChips
+            fields={displayFields}
+            filters={columnFilters}
+            onChange={onColumnFiltersChange}
+            onSelectColumn={focusColumn}
+          />
         </div>
       )}
       <div

@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { getUser } from '@/lib/db/queries';
+import { canEditProjectOrders } from '@/lib/project-order-edits';
 import { ProjectOrdersClient } from './project-orders-client';
 
 export default async function ProjectOrdersPage() {
@@ -12,5 +13,8 @@ export default async function ProjectOrdersPage() {
     redirect('/dashboard/orders');
   }
 
-  return <ProjectOrdersClient />;
+  // Editing invoicing data from the shared view is narrower than reading it —
+  // the same gate the API applies, so PMs never see an editor that would be
+  // refused. See lib/project-order-edits.ts.
+  return <ProjectOrdersClient canEdit={canEditProjectOrders(user.role)} />;
 }

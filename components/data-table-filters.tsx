@@ -1,7 +1,8 @@
 "use client"
 
-import { CalendarDays, ChevronDown } from "lucide-react"
+import { CalendarDays, ChevronDown, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
+import type { RefObject } from "react"
 import { createPortal } from "react-dom"
 import type { CSSProperties } from "react"
 import type { DateRange } from "react-day-picker"
@@ -12,91 +13,65 @@ import { Calendar } from "@/components/ui/calendar"
 // Shared per-column filter primitives used by the orders and projects tables.
 //
 // Filter kinds:
-//   - "text"    free-text "contains" match (default)
+//   - "text"    free-text match (default)
 //   - "multi"   multi-select dropdown of distinct values (pick any number)
-//   - "numeric" comparison (=, >, <, >=, <=) against the amount in the cell
+//   - "numeric" comparison against the amount in the cell
 //   - "date"    single date or range, chosen from a calendar picker (stored as
 //               mm/dd/yy or mm/dd/yy-mm/dd/yy so older typed filters still parse)
+//
+// Each kind carries an operator, chosen from the small dropdown to the left of
+// its value control: contains / is / is not / is populated / is blank and so
+// on, per kind (see FILTER_OPERATORS). "Is populated" and "is blank" hide the
+// value control — they ask about the column itself.
 // ---------------------------------------------------------------------------
 
-// The filter shapes and the `isFilterActive` predicate now live in
+// The filter shapes, operators and the `isFilterActive` predicate live in
 // lib/column-filters.ts so the API routes can share them (a route can't import
 // this file — it's a client component). Re-exported here so existing importers
 // keep working.
-import type { ColumnFilter, NumericOp } from "@/lib/column-filters"
+import {
+  FILTER_OPERATORS,
+  buildDateFilter,
+  describeFilter,
+  filterOp,
+  isFilterActive,
+  isPresenceOp,
+  operatorMeta,
+  parseDateRange,
+  parseNumeric,
+  startOfDay,
+  withOp,
+  type ColumnFilter,
+  type DateOp,
+  type FilterKind,
+  type FilterOp,
+} from "@/lib/column-filters"
 
-export type { NumericOp, FilterKind, ColumnFilter } from "@/lib/column-filters"
-export { defaultFilter, isFilterActive } from "@/lib/column-filters"
-
-// Pull a comparable number out of a displayed cell value, ignoring currency
-// symbols, thousands separators, "%", "hours", etc. ("€1,234.56" -> 1234.56).
-export const parseNumeric = (s: string): number | null => {
-  const cleaned = s.replace(/[^0-9.\-]/g, "")
-  if (cleaned === "" || cleaned === "-" || cleaned === ".") return null
-  const n = parseFloat(cleaned)
-  return isNaN(n) ? null : n
-}
-
-// Parse a user-typed mm/dd/yy or mm/dd/yyyy string. Two-digit years map to
-// 2000+. Returns null for empty or malformed input (so a half-typed date
-// doesn't blank out the table).
-export const parseInputDate = (s: string): Date | null => {
-  const m = s.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/)
-  if (!m) return null
-  const month = parseInt(m[1], 10)
-  const day = parseInt(m[2], 10)
-  let year = parseInt(m[3], 10)
-  if (m[3].length === 2) year += 2000
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null
-  const d = new Date(year, month - 1, day)
-  if (isNaN(d.getTime()) || d.getMonth() !== month - 1 || d.getDate() !== day) return null
-  return d
-}
-
-// Parse the single date-filter input into a from/to pair. Accepts a lone date
-// ("mm/dd/yy" -> that exact day, from === to) or a range ("mm/dd/yy-mm/dd/yy").
-// Tolerant of messy input: each side is trimmed (so spaces around the "-" don't
-// matter), en/em dashes are normalized to "-", and a backwards range (later date
-// typed first) is swapped. Date parts use "/", so the first "-" separates the two
-// ends; either end may be blank or half-typed, leaving that side open (null).
-export const parseDateRange = (s: string): { from: Date | null; to: Date | null } => {
-  const trimmed = s.trim().replace(/[‐-―−]/g, "-") // en/em/figure dashes, minus -> "-"
-  if (trimmed === "") return { from: null, to: null }
-  const dash = trimmed.indexOf("-")
-  if (dash === -1) {
-    const d = parseInputDate(trimmed)
-    return { from: d, to: d }
-  }
-  let from = parseInputDate(trimmed.slice(0, dash))
-  let to = parseInputDate(trimmed.slice(dash + 1))
-  if (from && to && from.getTime() > to.getTime()) [from, to] = [to, from]
-  return { from, to }
-}
-
-const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-
-/**
- * Resolves the typed mm/dd/yy text into the absolute instants the server
- * compares against. The bounds are whole days in the *browser's* timezone,
- * matching the toLocaleDateString() the cells are rendered with — sending the
- * raw text would compare local days against UTC timestamps and slide rows onto
- * the wrong day.
- */
-export const buildDateFilter = (text: string): ColumnFilter => {
-  const { from, to } = parseDateRange(text)
-  return {
-    kind: "date",
-    text,
-    from: from ? new Date(from.getFullYear(), from.getMonth(), from.getDate()).toISOString() : null,
-    to: to
-      ? new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 999).toISOString()
-      : null,
-  }
-}
+export type {
+  NumericOp,
+  FilterKind,
+  FilterOp,
+  ColumnFilter,
+  PresenceOp,
+} from "@/lib/column-filters"
+export {
+  defaultFilter,
+  isFilterActive,
+  describeFilter,
+  filterOp,
+  isPresenceOp,
+  buildDateFilter,
+  parseDateRange,
+  parseInputDate,
+  parseNumeric,
+} from "@/lib/column-filters"
 
 // Compare the number shown in a cell against a numeric filter. Incomplete
 // input passes (no-op); a non-numeric cell fails an active numeric filter.
-export const matchesNumeric = (displayValue: string, filter: { op: NumericOp; value: string }): boolean => {
+export const matchesNumeric = (
+  displayValue: string,
+  filter: { op: string; value: string }
+): boolean => {
   const target = parseNumeric(filter.value)
   if (target === null) return true
   const cell = parseNumeric(displayValue)
@@ -130,7 +105,165 @@ export const matchesDate = (raw: any, filter: { text: string }): boolean => {
 const inputClass = "w-full min-w-0 px-2 py-1 rounded text-xs bg-white"
 const inputStyle = { border: "1px solid #cbd5e1", color: "#012e64" } as const
 
-// --- UI components ---------------------------------------------------------
+/**
+ * Closes a floating panel when the page moves under it.
+ *
+ * The panels are position:fixed so they can escape the table's overflow, which
+ * means an outside scroll or a resize would leave them detached from their
+ * trigger. Scrolling *inside* the panel is the user reading its own list.
+ */
+const useDismissOnOutside = (
+  open: boolean,
+  setOpen: (open: boolean) => void,
+  refs: RefObject<HTMLElement | null>[]
+) => {
+  useEffect(() => {
+    if (!open) return
+    const insideAny = (target: Node) => refs.some((ref) => ref.current?.contains(target))
+    const onDocClick = (e: MouseEvent) => {
+      if (!insideAny(e.target as Node)) setOpen(false)
+    }
+    const close = () => setOpen(false)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close()
+    }
+    const onScroll = (e: Event) => {
+      if (insideAny(e.target as Node)) return
+      close()
+    }
+    document.addEventListener("mousedown", onDocClick)
+    document.addEventListener("keydown", onKey)
+    window.addEventListener("resize", close)
+    window.addEventListener("scroll", onScroll, true)
+    return () => {
+      document.removeEventListener("mousedown", onDocClick)
+      document.removeEventListener("keydown", onKey)
+      window.removeEventListener("resize", close)
+      window.removeEventListener("scroll", onScroll, true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+}
+
+// --- Operator picker -------------------------------------------------------
+
+/**
+ * The "choose an operator" half of a column filter: a compact button showing
+ * the operator's glyph, and a menu of the operators that make sense for the
+ * column's kind. Its full name is on the button's tooltip, and the active
+ * filter chips above the table spell the whole condition out.
+ */
+export function FilterOperatorSelect({
+  filter,
+  onChange,
+  label,
+}: {
+  filter: ColumnFilter
+  onChange: (filter: ColumnFilter) => void
+  /** Column name, used in the tooltip so the condition reads as a sentence. */
+  label?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+
+  useDismissOnOutside(open, setOpen, [panelRef, btnRef])
+
+  const kind: FilterKind = filter.kind
+  const current = filterOp(filter)
+  const meta = operatorMeta(kind, current)
+  const operators = FILTER_OPERATORS[kind]
+
+  const toggleOpen = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      const width = 170
+      const height = operators.length * 30 + 8
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8))
+      const top =
+        r.bottom + height > window.innerHeight - 8
+          ? Math.max(8, r.top - height - 4)
+          : r.bottom + 4
+      setPos({ top, left })
+    }
+    setOpen((o) => !o)
+  }
+
+  const pick = (op: FilterOp) => {
+    onChange(applyOperator(filter, op))
+    setOpen(false)
+  }
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={toggleOpen}
+        title={`${label ? `${label}: ` : ""}${meta.label} — click to change the operator`}
+        aria-label={`Filter operator: ${meta.label}`}
+        className="shrink-0 flex items-center justify-center gap-0.5 rounded text-xs bg-white cursor-pointer"
+        style={{
+          ...inputStyle,
+          width: 34,
+          height: 26,
+          fontWeight: 600,
+          color: isPresenceOp(current) ? "#012e64" : "#5d6b88",
+          backgroundColor: isPresenceOp(current) ? "#e8f1fd" : "#ffffff",
+        }}
+      >
+        <span className="leading-none">{meta.glyph}</span>
+        <ChevronDown className="w-2.5 h-2.5 shrink-0" style={{ color: "#8d9499" }} />
+      </button>
+      {open &&
+        pos &&
+        createPortal(
+          <div
+            ref={panelRef}
+            className="fixed z-[70] rounded shadow-lg bg-white py-1"
+            style={{ top: pos.top, left: pos.left, width: 170, border: "1px solid #cbd5e1" }}
+          >
+            {operators.map((entry) => (
+              <button
+                key={entry.value}
+                type="button"
+                onClick={() => pick(entry.value)}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-blue-50"
+                style={{
+                  color: "#012e64",
+                  fontWeight: entry.value === current ? 600 : 400,
+                  backgroundColor: entry.value === current ? "#f0f7ff" : undefined,
+                }}
+              >
+                <span className="w-4 text-center" style={{ color: "#5d6b88" }}>
+                  {entry.glyph}
+                </span>
+                <span className="truncate">{entry.label}</span>
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
+    </>
+  )
+}
+
+/**
+ * Switches a filter's operator. "Before"/"after" compare against one day, so a
+ * range typed under "on / between" collapses to its first date rather than
+ * being silently half-used.
+ */
+const applyOperator = (filter: ColumnFilter, op: FilterOp): ColumnFilter => {
+  if (filter.kind !== "date" || (op !== "before" && op !== "after")) {
+    return withOp(filter, op)
+  }
+  const { from, to } = parseDateRange(filter.text)
+  const day = from ?? to
+  return day ? buildDateFilter(formatDate(day), op as DateOp) : withOp(filter, op)
+}
+
+// --- Value controls --------------------------------------------------------
 
 export function MultiSelectFilter({
   options,
@@ -149,30 +282,7 @@ export function MultiSelectFilter({
   const panelRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null)
 
-  useEffect(() => {
-    if (!open) return
-    const onDocClick = (e: MouseEvent) => {
-      const t = e.target as Node
-      if (panelRef.current?.contains(t) || btnRef.current?.contains(t)) return
-      setOpen(false)
-    }
-    const close = () => setOpen(false)
-    // Close when the page/an ancestor scrolls (the panel is position:fixed and
-    // would otherwise detach from its button), but ignore scrolling *inside*
-    // the panel itself — that's the user scrolling the option list.
-    const onScroll = (e: Event) => {
-      if (panelRef.current?.contains(e.target as Node)) return
-      close()
-    }
-    document.addEventListener("mousedown", onDocClick)
-    window.addEventListener("resize", close)
-    window.addEventListener("scroll", onScroll, true)
-    return () => {
-      document.removeEventListener("mousedown", onDocClick)
-      window.removeEventListener("resize", close)
-      window.removeEventListener("scroll", onScroll, true)
-    }
-  }, [open])
+  useDismissOnOutside(open, setOpen, [panelRef, btnRef])
 
   const toggleOpen = () => {
     if (!open && btnRef.current) {
@@ -245,41 +355,24 @@ export function MultiSelectFilter({
   )
 }
 
-const NUMERIC_OPS: NumericOp[] = ["=", ">", "<", ">=", "<="]
-
-export function NumericFilter({
+function NumericValueInput({
   filter,
   onChange,
 }: {
-  filter: { op: NumericOp; value: string }
-  onChange: (filter: { kind: "numeric"; op: NumericOp; value: string }) => void
+  filter: Extract<ColumnFilter, { kind: "numeric" }>
+  onChange: (filter: ColumnFilter) => void
 }) {
   return (
-    <div className="flex gap-1">
-      <select
-        value={filter.op}
-        onChange={(e) => onChange({ kind: "numeric", op: e.target.value as NumericOp, value: filter.value })}
-        className="shrink-0 appearance-none text-center px-1 py-1 rounded text-xs bg-white cursor-pointer"
-        style={{ ...inputStyle, width: 36, WebkitAppearance: "none" }}
-        title="Comparison operator"
-      >
-        {NUMERIC_OPS.map((op) => (
-          <option key={op} value={op}>
-            {op}
-          </option>
-        ))}
-      </select>
-      <input
-        type="text"
-        inputMode="decimal"
-        value={filter.value}
-        onChange={(e) => onChange({ kind: "numeric", op: filter.op, value: e.target.value })}
-        placeholder="0"
-        title="Value to compare against"
-        className={inputClass}
-        style={inputStyle}
-      />
-    </div>
+    <input
+      type="text"
+      inputMode="decimal"
+      value={filter.value}
+      onChange={(e) => onChange({ ...filter, value: e.target.value })}
+      placeholder="0"
+      title="Value to compare against"
+      className={inputClass}
+      style={inputStyle}
+    />
   )
 }
 
@@ -323,6 +416,7 @@ const PRESETS: { label: string; range: (today: Date) => { from: Date; to: Date }
 ]
 
 const PANEL_WIDTH = 470
+const SINGLE_PANEL_WIDTH = 340
 
 // Recolor the shared shadcn calendar to the table's navy palette by overriding
 // the theme tokens it reads (globals.css stores them as bare HSL triplets).
@@ -337,7 +431,7 @@ export function DateRangeFilter({
   filter,
   onChange,
 }: {
-  filter: { text: string }
+  filter: Extract<ColumnFilter, { kind: "date" }>
   onChange: (filter: ColumnFilter) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -345,44 +439,23 @@ export function DateRangeFilter({
   const panelRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
 
+  const op = filterOp(filter) as DateOp
+  // "Before"/"after" compare against one day, so the panel picks a single day
+  // and drops the range presets.
+  const singleDay = op === "before" || op === "after"
+  const width = singleDay ? SINGLE_PANEL_WIDTH : PANEL_WIDTH
+
   const { from, to } = parseDateRange(filter.text)
   const selected: DateRange | undefined = from || to ? { from: from ?? undefined, to: to ?? undefined } : undefined
 
-  useEffect(() => {
-    if (!open) return
-    const onDocClick = (e: MouseEvent) => {
-      const t = e.target as Node
-      if (panelRef.current?.contains(t) || btnRef.current?.contains(t)) return
-      setOpen(false)
-    }
-    const close = () => setOpen(false)
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close()
-    }
-    // Same rationale as MultiSelectFilter: the panel is position:fixed, so any
-    // outside scroll would detach it from its trigger.
-    const onScroll = (e: Event) => {
-      if (panelRef.current?.contains(e.target as Node)) return
-      close()
-    }
-    document.addEventListener("mousedown", onDocClick)
-    document.addEventListener("keydown", onKey)
-    window.addEventListener("resize", close)
-    window.addEventListener("scroll", onScroll, true)
-    return () => {
-      document.removeEventListener("mousedown", onDocClick)
-      document.removeEventListener("keydown", onKey)
-      window.removeEventListener("resize", close)
-      window.removeEventListener("scroll", onScroll, true)
-    }
-  }, [open])
+  useDismissOnOutside(open, setOpen, [panelRef, btnRef])
 
   const toggleOpen = () => {
     if (!open && btnRef.current) {
       const r = btnRef.current.getBoundingClientRect()
       // Keep the panel on screen: flip above when it would run off the bottom,
       // and pull it left when it would run off the right edge.
-      const left = Math.max(8, Math.min(r.left, window.innerWidth - PANEL_WIDTH - 8))
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8))
       const estHeight = 360
       const top = r.bottom + estHeight > window.innerHeight - 8 ? Math.max(8, r.top - estHeight - 4) : r.bottom + 4
       setPos({ top, left })
@@ -391,9 +464,18 @@ export function DateRangeFilter({
   }
 
   const commit = (range: DateRange | undefined) =>
-    onChange(buildDateFilter(serializeRange(range?.from ?? null, range?.to ?? null)))
+    onChange(buildDateFilter(serializeRange(range?.from ?? null, range?.to ?? null), op))
 
-  const label = !from && !to ? "All dates" : from && to && startOfDay(from) === startOfDay(to)
+  const commitDay = (day: Date | undefined) =>
+    onChange(buildDateFilter(day ? formatDate(day) : "", op))
+
+  const label = !from && !to
+    ? singleDay
+      ? "Pick a date"
+      : "All dates"
+    : singleDay
+    ? formatDate((from ?? to)!)
+    : from && to && startOfDay(from) === startOfDay(to)
     ? formatDate(from)
     : `${from ? formatDate(from) : "…"} – ${to ? formatDate(to) : "…"}`
 
@@ -407,7 +489,7 @@ export function DateRangeFilter({
         onClick={toggleOpen}
         className={`${inputClass} flex items-center gap-1.5 text-left`}
         style={{ ...inputStyle, color: from || to ? "#012e64" : "#8d9499" }}
-        title="Pick a single date or a date range"
+        title={singleDay ? "Pick the date to compare against" : "Pick a single date or a date range"}
       >
         <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: "#8d9499" }} />
         <span className="truncate flex-1">{label}</span>
@@ -418,56 +500,76 @@ export function DateRangeFilter({
           <div
             ref={panelRef}
             className="fixed z-[60] flex rounded-md shadow-lg bg-white overflow-hidden"
-            style={{ top: pos.top, left: pos.left, width: PANEL_WIDTH, border: "1px solid #cbd5e1" }}
+            style={{ top: pos.top, left: pos.left, width, border: "1px solid #cbd5e1" }}
           >
-            <div className="shrink-0 py-2 flex flex-col" style={{ width: 132, borderRight: "1px solid #e2e8f0" }}>
-              <div
-                className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wide"
-                style={{ color: "#8d9499" }}
-              >
-                Quick ranges
-              </div>
-              {PRESETS.map((p) => (
-                <button
-                  key={p.label}
-                  type="button"
-                  onClick={() => {
-                    const r = p.range(today)
-                    commit(r)
-                    setOpen(false)
-                  }}
-                  className="px-3 py-1.5 text-left text-xs hover:bg-blue-50"
-                  style={{ color: "#012e64" }}
+            {!singleDay && (
+              <div className="shrink-0 py-2 flex flex-col" style={{ width: 132, borderRight: "1px solid #e2e8f0" }}>
+                <div
+                  className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wide"
+                  style={{ color: "#8d9499" }}
                 >
-                  {p.label}
-                </button>
-              ))}
-            </div>
+                  Quick ranges
+                </div>
+                {PRESETS.map((p) => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    onClick={() => {
+                      const r = p.range(today)
+                      commit(r)
+                      setOpen(false)
+                    }}
+                    className="px-3 py-1.5 text-left text-xs hover:bg-blue-50"
+                    style={{ color: "#012e64" }}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="flex-1 min-w-0 flex flex-col">
               <div style={calendarTheme}>
-                <Calendar
-                  mode="range"
-                  selected={selected}
-                  defaultMonth={from ?? to ?? today}
-                  numberOfMonths={1}
-                  captionLayout="dropdown"
-                  startMonth={new Date(2015, 0)}
-                  endMonth={new Date(today.getFullYear() + 2, 11)}
-                  onSelect={(range) => commit(range)}
-                  className="p-3"
-                />
+                {singleDay ? (
+                  <Calendar
+                    mode="single"
+                    selected={from ?? to ?? undefined}
+                    defaultMonth={from ?? to ?? today}
+                    numberOfMonths={1}
+                    captionLayout="dropdown"
+                    startMonth={new Date(2015, 0)}
+                    endMonth={new Date(today.getFullYear() + 2, 11)}
+                    onSelect={(day) => commitDay(day ?? undefined)}
+                    className="p-3"
+                  />
+                ) : (
+                  <Calendar
+                    mode="range"
+                    selected={selected}
+                    defaultMonth={from ?? to ?? today}
+                    numberOfMonths={1}
+                    captionLayout="dropdown"
+                    startMonth={new Date(2015, 0)}
+                    endMonth={new Date(today.getFullYear() + 2, 11)}
+                    onSelect={(range) => commit(range)}
+                    className="p-3"
+                  />
+                )}
               </div>
               <div
                 className="flex items-center justify-between gap-2 px-3 py-2"
                 style={{ borderTop: "1px solid #e2e8f0" }}
               >
                 <span className="text-xs truncate" style={{ color: from || to ? "#012e64" : "#8d9499" }}>
-                  {from || to ? label : "Click a day, then a second day for a range"}
+                  {from || to
+                    ? `${operatorMeta("date", op).phrase} ${label}`
+                    : singleDay
+                    ? "Click the day to compare against"
+                    : "Click a day, then a second day for a range"}
                 </span>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
-                    onClick={() => onChange(buildDateFilter(""))}
+                    onClick={() => onChange(buildDateFilter("", op))}
                     className="px-2 py-1 rounded text-xs hover:bg-blue-50"
                     style={{ color: "#8d9499", border: "1px solid #cbd5e1" }}
                   >
@@ -488,5 +590,154 @@ export function DateRangeFilter({
           document.body
         )}
     </>
+  )
+}
+
+// --- One column's filter cell ----------------------------------------------
+
+/**
+ * Operator + value for one column, as both data tables render it in the header
+ * row under the column label.
+ *
+ * `filterable: false` is for a column the API has no filter for: the input is
+ * disabled rather than accepting a condition the server would silently drop.
+ */
+export function ColumnFilterControl({
+  filter,
+  onChange,
+  label,
+  options = [],
+  onOpenOptions,
+  filterable = true,
+}: {
+  filter: ColumnFilter
+  onChange: (filter: ColumnFilter) => void
+  label?: string
+  options?: string[]
+  onOpenOptions?: () => void
+  filterable?: boolean
+}) {
+  if (!filterable) {
+    return (
+      <input
+        type="text"
+        value=""
+        disabled
+        readOnly
+        placeholder="Not filterable"
+        title="This column can't be filtered on the server, so no filter is offered for it."
+        className="w-full min-w-0 px-2 py-1 rounded text-xs cursor-not-allowed"
+        style={{ border: "1px dashed #cbd5e1", color: "#8d9499", backgroundColor: "#f8f8f8" }}
+      />
+    )
+  }
+
+  const op = filterOp(filter)
+  const meta = operatorMeta(filter.kind, op)
+
+  return (
+    <div className="flex items-center gap-1">
+      <FilterOperatorSelect filter={filter} onChange={onChange} label={label} />
+      {!meta.needsValue ? (
+        <div
+          className="flex-1 min-w-0 px-2 py-1 rounded text-xs truncate"
+          title={
+            op === "blank"
+              ? `Rows where ${label ?? "this column"} has no value at all`
+              : `Rows where ${label ?? "this column"} has any value`
+          }
+          style={{ border: "1px dashed #cbd5e1", color: "#5d6b88", backgroundColor: "#f1f5f9" }}
+        >
+          {op === "blank" ? "No value" : "Any value"}
+        </div>
+      ) : filter.kind === "multi" ? (
+        <MultiSelectFilter
+          options={options}
+          values={filter.values}
+          onChange={(values) => onChange({ ...filter, values })}
+          onOpen={onOpenOptions}
+        />
+      ) : filter.kind === "numeric" ? (
+        <NumericValueInput filter={filter} onChange={onChange} />
+      ) : filter.kind === "date" ? (
+        <DateRangeFilter filter={filter} onChange={onChange} />
+      ) : (
+        <input
+          type="text"
+          value={filter.value}
+          onChange={(e) => onChange({ ...filter, value: e.target.value })}
+          placeholder={op === "contains" || op === "not_contains" ? "Contains…" : "Exact value…"}
+          title={`Filter: ${meta.label.toLowerCase()}`}
+          className={inputClass}
+          style={inputStyle}
+        />
+      )}
+    </div>
+  )
+}
+
+// --- Active filter summary -------------------------------------------------
+
+/**
+ * The conditions currently narrowing the table, one chip each, so a stack of
+ * filters stays readable without scrolling sideways to find the inputs.
+ *
+ * Clicking a chip scrolls its column's filter into view; the × drops that one
+ * condition and leaves the others in place.
+ */
+export function ActiveFilterChips({
+  fields,
+  filters,
+  onChange,
+  onSelectColumn,
+}: {
+  fields: { key: string; label: string }[]
+  filters: Record<string, ColumnFilter>
+  onChange: (filters: Record<string, ColumnFilter>) => void
+  onSelectColumn?: (key: string) => void
+}) {
+  const active = Object.entries(filters).filter(([, filter]) => isFilterActive(filter))
+  if (active.length === 0) return null
+
+  const labelFor = (key: string) => fields.find((f) => f.key === key)?.label ?? key
+
+  const remove = (key: string) => {
+    const next = { ...filters }
+    delete next[key]
+    onChange(next)
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {active.map(([key, filter]) => (
+        <span
+          key={key}
+          className="inline-flex items-center gap-1 rounded-full pl-2.5 pr-1 py-0.5 text-xs"
+          style={{ backgroundColor: "#ffffff", border: "1px solid #b9d6f7", color: "#012e64" }}
+        >
+          <button
+            type="button"
+            onClick={() => onSelectColumn?.(key)}
+            className="inline-flex items-center gap-1 max-w-[420px]"
+            title={`${labelFor(key)} ${describeFilter(filter)} — click to jump to this column's filter`}
+          >
+            <span className="font-semibold truncate">{labelFor(key)}</span>
+            <span className="truncate" style={{ color: "#5d6b88" }}>
+              {describeFilter(filter)}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => remove(key)}
+            title={`Remove the ${labelFor(key)} filter`}
+            aria-label={`Remove the ${labelFor(key)} filter`}
+            className="inline-flex items-center justify-center h-4 w-4 rounded-full hover:bg-blue-100"
+            style={{ color: "#5d6b88" }}
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </span>
+      ))}
+    </div>
   )
 }

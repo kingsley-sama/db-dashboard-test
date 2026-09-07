@@ -11,13 +11,13 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import {
-  ColumnFilter,
-  DateRangeFilter,
-  MultiSelectFilter,
-  NumericFilter,
+  ActiveFilterChips,
+  ColumnFilterControl,
   defaultFilter,
   isFilterActive,
+  type ColumnFilter,
 } from "@/components/data-table-filters"
+import { InlineEditCell } from "@/components/inline-edit-cell"
 import { useRowHighlight, rowHighlightShadow } from "@/lib/table-utils"
 import {
   ORDER_STATUSES,
@@ -92,6 +92,7 @@ const selectColumns = new Set([
   "product_type",
   "sale_type",
   "product",
+  "partial_invoice",
 ])
 
 // Amount-style columns get a comparison filter (=, >, <, >=, <=) against the
@@ -148,7 +149,11 @@ export function OrdersDataTable({
   onColumnFiltersChange,
   filterOptions = {},
   onRequestFilterOptions,
+  filterableColumns,
   totalRows,
+  editableFields,
+  onCellSave,
+  editHint,
 }: {
   orders: any[]
   onEdit?: (order: any) => void
@@ -173,8 +178,23 @@ export function OrdersDataTable({
   filterOptions?: Record<string, string[]>
   /** Called when a dropdown opens, so the parent can load its options. */
   onRequestFilterOptions?: (column: string) => void
+  /**
+   * Keys the API can actually filter on. Anything outside it gets a disabled
+   * input instead of one whose condition the server would drop on the floor.
+   * Omit to treat every column as filterable.
+   */
+  filterableColumns?: Set<string>
   /** Server-wide row count for the active filters. */
   totalRows?: number
+  /**
+   * Keys whose cells can be typed into directly. Requires `onCellSave`; the
+   * parent owns the write and the row state behind it.
+   */
+  editableFields?: string[]
+  /** Saves one edited cell. Must reject when the write fails. */
+  onCellSave?: (order: any, key: string, value: string) => Promise<void>
+  /** Extra tooltip line shown on editable cells (per column key). */
+  editHint?: Record<string, string>
 }) {
   const visibleFields = useMemo(
     () =>
@@ -182,6 +202,10 @@ export function OrdersDataTable({
         ? fields.filter((f) => !hiddenColumns.includes(f.key))
         : fields,
     [hiddenColumns, fields]
+  )
+  const editableSet = useMemo(
+    () => new Set(onCellSave ? editableFields ?? [] : []),
+    [editableFields, onCellSave]
   )
   const scrollRef = useRef<HTMLDivElement>(null)
   const theadRef = useRef<HTMLTableSectionElement>(null)
@@ -321,6 +345,18 @@ export function OrdersDataTable({
   const clearFilters = () => onColumnFiltersChange({})
   const activeFilterCount = Object.values(columnFilters).filter(isFilterActive).length
 
+  // Bring a column's filter into view when its chip is clicked. The table is
+  // far wider than the screen, so a chip that couldn't take you to its input
+  // would say what is filtered without letting you change it.
+  const focusColumn = (key: string) => {
+    const container = scrollRef.current
+    const cell = container?.querySelector<HTMLElement>(`[data-filter-column="${CSS.escape(key)}"]`)
+    if (!container || !cell) return
+    const target = cell.offsetLeft - container.clientWidth / 2 + cell.offsetWidth / 2
+    container.scrollTo({ left: Math.max(0, target), behavior: "smooth" })
+    cell.querySelector<HTMLElement>("input:not([disabled]), button")?.focus({ preventScroll: true })
+  }
+
   // Select-all applies to the rows on the current page.
   const allFilteredSelected =
     orders.length > 0 && orders.every((o) => selectedIds?.has(o.id))
@@ -391,6 +427,7 @@ export function OrdersDataTable({
         return (
           <th
             key={field.key}
+            data-filter-column={field.key}
             className={`${field.width} px-2 py-2 align-top font-normal${isFirst ? ' sticky left-0 z-40' : ''}`}
             style={{
               backgroundColor: '#f8f8f8',
@@ -398,28 +435,14 @@ export function OrdersDataTable({
               boxShadow: stickyEdgeShadow(isFirst),
             }}
           >
-            {filter.kind === "multi" ? (
-              <MultiSelectFilter
-                options={filterOptions[field.key] ?? []}
-                values={filter.values}
-                onChange={(values) => setColumnFilter(field.key, { kind: "multi", values })}
-                onOpen={() => onRequestFilterOptions?.(field.key)}
-              />
-            ) : filter.kind === "numeric" ? (
-              <NumericFilter filter={filter} onChange={(f) => setColumnFilter(field.key, f)} />
-            ) : filter.kind === "date" ? (
-              <DateRangeFilter filter={filter} onChange={(f) => setColumnFilter(field.key, f)} />
-            ) : (
-              <input
-                type="text"
-                value={filter.value}
-                onChange={(e) => setColumnFilter(field.key, { kind: "text", value: e.target.value })}
-                placeholder="Contains…"
-                title="Filter: shows rows containing this text"
-                className="w-full min-w-0 px-2 py-1 rounded text-xs bg-white"
-                style={{ border: '1px solid #cbd5e1', color: '#012e64' }}
-              />
-            )}
+            <ColumnFilterControl
+              filter={filter}
+              label={field.label}
+              onChange={(f) => setColumnFilter(field.key, f)}
+              options={filterOptions[field.key] ?? []}
+              onOpenOptions={() => onRequestFilterOptions?.(field.key)}
+              filterable={!filterableColumns || filterableColumns.has(field.key)}
+            />
           </th>
         )
       })}
@@ -447,35 +470,46 @@ export function OrdersDataTable({
     <div className="relative">
       {activeFilterCount > 0 && (
         <div
-          className="flex items-center justify-between px-4 py-2 text-sm"
+          className="px-4 py-2 text-sm space-y-2"
           style={{ backgroundColor: '#f0f7ff', borderBottom: '1px solid #d0e7ff', color: '#5d6b88' }}
         >
-          <span>
-            {totalRows !== undefined ? (
-              <>
-                <span className="font-semibold" style={{ color: '#012e64' }}>
-                  {totalRows.toLocaleString()}
-                </span>{" "}
-                matching {totalRows === 1 ? 'row' : 'rows'} across all pages
-              </>
-            ) : (
-              <>
-                <span className="font-semibold" style={{ color: '#012e64' }}>
-                  {orders.length}
-                </span>{" "}
-                matching {orders.length === 1 ? 'row' : 'rows'}
-              </>
-            )}
-            {" "}({activeFilterCount} column {activeFilterCount === 1 ? 'filter' : 'filters'})
-          </span>
-          <button
-            onClick={clearFilters}
-            className="flex items-center gap-1 font-medium hover:underline"
-            style={{ color: '#012e64' }}
-          >
-            <X className="w-4 h-4" />
-            Clear filters
-          </button>
+          <div className="flex items-center justify-between gap-3">
+            <span>
+              {totalRows !== undefined ? (
+                <>
+                  <span className="font-semibold" style={{ color: '#012e64' }}>
+                    {totalRows.toLocaleString()}
+                  </span>{" "}
+                  matching {totalRows === 1 ? 'row' : 'rows'} across all pages
+                </>
+              ) : (
+                <>
+                  <span className="font-semibold" style={{ color: '#012e64' }}>
+                    {orders.length}
+                  </span>{" "}
+                  matching {orders.length === 1 ? 'row' : 'rows'}
+                </>
+              )}
+              {" "}({activeFilterCount} column {activeFilterCount === 1 ? 'filter' : 'filters'})
+            </span>
+            <button
+              onClick={clearFilters}
+              className="flex items-center gap-1 font-medium hover:underline shrink-0"
+              style={{ color: '#012e64' }}
+            >
+              <X className="w-4 h-4" />
+              Clear filters
+            </button>
+          </div>
+          {/* Every active condition, spelled out. Each chip drops just its own
+              filter, so narrowing down and backing one step out don't cost the
+              rest of the stack. */}
+          <ActiveFilterChips
+            fields={visibleFields}
+            filters={columnFilters}
+            onChange={onColumnFiltersChange}
+            onSelectColumn={focusColumn}
+          />
         </div>
       )}
       <div
@@ -616,6 +650,13 @@ export function OrdersDataTable({
                           {order.supplier_payment ? "Yes" : "No"}
                         </span>
                       </label>
+                    ) : editableSet.has(field.key) ? (
+                      <InlineEditCell
+                        value={order[field.key]}
+                        label={field.label}
+                        hint={editHint?.[field.key]}
+                        onSave={(value) => onCellSave!(order, field.key, value)}
+                      />
                     ) : field.maxWidth ? (
                       <div style={{ maxWidth: field.maxWidth, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {formatValue(order[field.key], field.key, order)}

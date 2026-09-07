@@ -9,20 +9,141 @@
 // loaded, so they only ever searched those rows. They are now serialized into a
 // `columnFilters` query param and translated into Supabase/PostgREST conditions,
 // so filtering, counting and pagination all happen across the whole table.
+//
+// Every filter kind carries an operator (`op`). It is optional and defaults to
+// the behaviour the table has always had — contains / is any of / on-or-between
+// — so filters persisted before operators existed keep working unchanged.
 // ---------------------------------------------------------------------------
 
+/** Comparison operators for amount columns. */
 export type NumericOp = "=" | ">" | "<" | ">=" | "<="
+
+/**
+ * Value-presence operators, available on every kind. They answer "does this
+ * field have a value at all?" against the stored column — a NULL — never
+ * against the text a cell happens to render.
+ */
+export type PresenceOp = "populated" | "blank"
+
+export type TextOp = "contains" | "not_contains" | "is" | "is_not" | PresenceOp
+export type MultiOp = "in" | "not_in" | PresenceOp
+export type DateOp = "between" | "before" | "after" | PresenceOp
+export type NumericFilterOp = NumericOp | PresenceOp
+
+export type FilterOp = TextOp | MultiOp | DateOp | NumericFilterOp
+
 export type FilterKind = "text" | "multi" | "numeric" | "date"
 
 export type ColumnFilter =
-  | { kind: "text"; value: string }
-  | { kind: "multi"; values: string[] }
-  | { kind: "numeric"; op: NumericOp; value: string }
+  | { kind: "text"; value: string; op?: TextOp }
+  | { kind: "multi"; values: string[]; op?: MultiOp }
+  | { kind: "numeric"; op: NumericFilterOp; value: string }
   // `text` is what the user typed (mm/dd/yy or a range) and is kept so the input
   // round-trips. `from`/`to` are absolute ISO instants resolved in the browser's
   // timezone — the server compares those, never the text, because the cells are
-  // rendered with toLocaleDateString() while Postgres stores UTC.
-  | { kind: "date"; text: string; from?: string | null; to?: string | null }
+  // rendered with toLocaleDateString() while Postgres stores UTC. For `before`
+  // and `after` both bounds hold the single chosen day, so switching operators
+  // keeps it.
+  | { kind: "date"; text: string; from?: string | null; to?: string | null; op?: DateOp }
+
+// ---------------------------------------------------------------------------
+// Operators
+// ---------------------------------------------------------------------------
+
+export type FilterOperatorMeta = {
+  value: FilterOp
+  /** Full label, shown in the operator menu. */
+  label: string
+  /** One- or two-character stand-in shown on the closed operator button. */
+  glyph: string
+  /** How the filter reads in the active-filter chips ("contains", "is before"). */
+  phrase: string
+  /** False for the presence operators, whose value input is hidden. */
+  needsValue: boolean
+}
+
+const PRESENCE_OPERATORS: FilterOperatorMeta[] = [
+  {
+    value: "populated",
+    label: "Is populated",
+    glyph: "•",
+    phrase: "is populated",
+    needsValue: false,
+  },
+  {
+    value: "blank",
+    label: "Is blank",
+    glyph: "∅",
+    phrase: "is blank",
+    needsValue: false,
+  },
+]
+
+/**
+ * The operators offered per filter kind, in menu order. The first entry is the
+ * default — the behaviour a filter has when it carries no explicit operator.
+ */
+export const FILTER_OPERATORS: Record<FilterKind, FilterOperatorMeta[]> = {
+  text: [
+    { value: "contains", label: "Contains", glyph: "~", phrase: "contains", needsValue: true },
+    {
+      value: "not_contains",
+      label: "Does not contain",
+      glyph: "!~",
+      phrase: "does not contain",
+      needsValue: true,
+    },
+    { value: "is", label: "Is", glyph: "=", phrase: "is", needsValue: true },
+    { value: "is_not", label: "Is not", glyph: "≠", phrase: "is not", needsValue: true },
+    ...PRESENCE_OPERATORS,
+  ],
+  multi: [
+    { value: "in", label: "Is", glyph: "=", phrase: "is", needsValue: true },
+    { value: "not_in", label: "Is not", glyph: "≠", phrase: "is not", needsValue: true },
+    ...PRESENCE_OPERATORS,
+  ],
+  numeric: [
+    { value: "=", label: "Equals", glyph: "=", phrase: "=", needsValue: true },
+    { value: ">", label: "Greater than", glyph: ">", phrase: ">", needsValue: true },
+    { value: "<", label: "Less than", glyph: "<", phrase: "<", needsValue: true },
+    { value: ">=", label: "At least", glyph: "≥", phrase: "≥", needsValue: true },
+    { value: "<=", label: "At most", glyph: "≤", phrase: "≤", needsValue: true },
+    ...PRESENCE_OPERATORS,
+  ],
+  date: [
+    // One day picked is "equals"; two are the ends of a range.
+    { value: "between", label: "Is on / between", glyph: "=", phrase: "is", needsValue: true },
+    { value: "before", label: "Is before", glyph: "<", phrase: "is before", needsValue: true },
+    { value: "after", label: "Is after", glyph: ">", phrase: "is after", needsValue: true },
+    ...PRESENCE_OPERATORS,
+  ],
+}
+
+/**
+ * Operators for a kind. `kind` reaches this from saved state and from the query
+ * string, so an unrecognised one falls back to the text operators rather than
+ * indexing into nothing — a corrupted saved filter must not take the table down
+ * with it. It is dropped a moment later by validateFilter / isFilterActive.
+ */
+const operatorsFor = (kind: FilterKind): FilterOperatorMeta[] =>
+  FILTER_OPERATORS[kind] ?? FILTER_OPERATORS.text
+
+export const defaultOp = (kind: FilterKind): FilterOp => operatorsFor(kind)[0].value
+
+/** The operator in force, filling in the default for filters that omit it. */
+export const filterOp = (filter: ColumnFilter): FilterOp =>
+  filter.op ?? defaultOp(filter.kind)
+
+export const isPresenceOp = (op: FilterOp): op is PresenceOp =>
+  op === "populated" || op === "blank"
+
+export const operatorMeta = (kind: FilterKind, op: FilterOp): FilterOperatorMeta => {
+  const operators = operatorsFor(kind)
+  return operators.find((entry) => entry.value === op) ?? operators[0]
+}
+
+const isValidOp = (kind: FilterKind, op: unknown): boolean =>
+  Boolean(FILTER_OPERATORS[kind]?.some((entry) => entry.value === op))
 
 export const defaultFilter = (kind: FilterKind): ColumnFilter => {
   switch (kind) {
@@ -37,9 +158,31 @@ export const defaultFilter = (kind: FilterKind): ColumnFilter => {
   }
 }
 
+/**
+ * Switches a filter's operator, keeping whatever value it already carries so
+ * flipping between operators — or into "is blank" and back — doesn't make the
+ * user retype it.
+ */
+export const withOp = (filter: ColumnFilter, op: FilterOp): ColumnFilter => {
+  switch (filter.kind) {
+    case "multi":
+      return { ...filter, op: op as MultiOp }
+    case "numeric":
+      return { ...filter, op: op as NumericFilterOp }
+    case "date":
+      return { ...filter, op: op as DateOp }
+    default:
+      return { ...filter, op: op as TextOp }
+  }
+}
+
 /** A filter only counts as active once it can actually narrow the result set. */
 export const isFilterActive = (filter: ColumnFilter | undefined): boolean => {
   if (!filter) return false
+  // "Is populated" / "is blank" ask about the column itself, so they narrow the
+  // result set without a value of their own.
+  if (isPresenceOp(filterOp(filter))) return true
+
   switch (filter.kind) {
     case "multi":
       return filter.values.length > 0
@@ -51,6 +194,32 @@ export const isFilterActive = (filter: ColumnFilter | undefined): boolean => {
       return Boolean(filter.from || filter.to)
     default:
       return filter.value.trim() !== ""
+  }
+}
+
+/**
+ * One filter in plain English, for the active-filter chips: "is populated",
+ * `contains "acme"`, "is any of A, B". Pure and server-safe so the phrasing
+ * stays in one place.
+ */
+export const describeFilter = (filter: ColumnFilter): string => {
+  const op = filterOp(filter)
+  const { phrase } = operatorMeta(filter.kind, op)
+  if (isPresenceOp(op)) return phrase
+
+  switch (filter.kind) {
+    case "multi": {
+      const values = filter.values.map((v) => (v === "-" ? "(blank)" : v))
+      if (values.length === 0) return phrase
+      if (values.length === 1) return `${phrase} ${values[0]}`
+      return `${op === "not_in" ? "is none of" : "is any of"} ${values.join(", ")}`
+    }
+    case "numeric":
+      return `${phrase} ${filter.value.trim()}`
+    case "date":
+      return `${phrase} ${filter.text.trim().replace(/-/, " – ")}`
+    default:
+      return `${phrase} "${filter.value.trim()}"`
   }
 }
 
@@ -163,6 +332,13 @@ export const PROJECT_ORDERS_FILTER_COLUMNS: ColumnFilterMap = {
   project_name: t("project_name"),
   invoice_number: t("invoice_number"),
   client_contact_name: t("client_contact_name"),
+  company_email: t("company_email"),
+  path_to_files: t("path_to_files"),
+  // NOTE: click_up_task_link and ap_epcs_invoicing are shown by the table but
+  // deliberately left out — nothing else in the app filters them, so their
+  // Postgres type is unconfirmed and an ilike against an enum column would fail
+  // the whole request. The table renders their filter input disabled instead of
+  // accepting one it would silently drop.
   project_status: e("project_status"),
   project_type: e("project_type"),
   construction_type: e("construction_type"),
@@ -171,6 +347,16 @@ export const PROJECT_ORDERS_FILTER_COLUMNS: ColumnFilterMap = {
   first_or_next_project: e("first_or_next_project"),
   project_manager: e("project_manager"),
   sales_person: e("sales_person"),
+  partial_invoice: e("partial_invoice"),
+  // Project-level dates the view carries alongside the order ones. The
+  // invoicing workflow starts from delivery_completion_date — "date of
+  // completion of first delivery" — so it has to be filterable, including by
+  // whether it is set at all.
+  order_confirmation_date: d("order_confirmation_date"),
+  delivery_completion_date: d("delivery_completion_date"),
+  invoice_date: d("invoice_date"),
+  invoice_paid_date: d("invoice_paid_date"),
+  partial_invoice_paid_date: d("partial_invoice_paid_date"),
 }
 
 /**
@@ -238,6 +424,17 @@ export const escapePostgrestValue = (value: string): string => {
   return /[,()".\\:]/.test(value) ? `"${escaped}"` : escaped
 }
 
+/**
+ * Escapes the LIKE metacharacters in a value that must match literally.
+ *
+ * The "is" / "is not" operators compare the whole cell, but they run through
+ * ILIKE so they stay case-insensitive the way the rest of the table's text
+ * matching is. Without this a value containing % or _ would silently become a
+ * wildcard — "50%" would match "50" followed by anything.
+ */
+export const escapeLikeLiteral = (value: string): string =>
+  value.replace(/[\\%_]/g, (char) => `\\${char}`)
+
 /** Builds an `or=(...)` search expression matching `search` across `columns`. */
 export const buildSearchFilter = (columns: string[], search: string): string =>
   columns.map((column) => `${column}.ilike.${escapePostgrestValue(`%${search}%`)}`).join(",")
@@ -282,23 +479,33 @@ export const parseColumnFilters = (
   return result
 }
 
-const NUMERIC_OPS: NumericOp[] = ["=", ">", "<", ">=", "<="]
-
 const validateFilter = (value: unknown): ColumnFilter | null => {
   if (!value || typeof value !== "object") return null
   const filter = value as Record<string, unknown>
+  const kind = filter.kind as FilterKind
+  // An operator the server doesn't know would otherwise fall back to the
+  // default and quietly filter for something else, so drop the whole filter.
+  const op = filter.op === undefined ? undefined : filter.op
+  if (kind !== "numeric" && op !== undefined && !isValidOp(kind, op)) return null
 
-  switch (filter.kind) {
+  switch (kind) {
     case "text":
-      return typeof filter.value === "string" ? { kind: "text", value: filter.value } : null
+      return typeof filter.value === "string"
+        ? { kind: "text", value: filter.value, ...(op ? { op: op as TextOp } : {}) }
+        : null
     case "multi":
       return Array.isArray(filter.values) && filter.values.every((v) => typeof v === "string")
-        ? { kind: "multi", values: filter.values as string[] }
+        ? {
+            kind: "multi",
+            values: filter.values as string[],
+            ...(op ? { op: op as MultiOp } : {}),
+          }
         : null
     case "numeric":
-      return typeof filter.value === "string" &&
-        NUMERIC_OPS.includes(filter.op as NumericOp)
-        ? { kind: "numeric", op: filter.op as NumericOp, value: filter.value }
+      // Unlike the other kinds numeric has always carried its operator, so an
+      // unknown one is rejected rather than defaulted.
+      return typeof filter.value === "string" && isValidOp("numeric", filter.op)
+        ? { kind: "numeric", op: filter.op as NumericFilterOp, value: filter.value }
         : null
     case "date": {
       const from = typeof filter.from === "string" ? filter.from : null
@@ -312,6 +519,7 @@ const validateFilter = (value: unknown): ColumnFilter | null => {
         text: typeof filter.text === "string" ? filter.text : "",
         from,
         to,
+        ...(op ? { op: op as DateOp } : {}),
       }
     }
     default:
@@ -339,12 +547,14 @@ export const needsInnerJoin = (
  * value: the inputs sit under cells rendered as "€1,234.56", "12.5%" or
  * "8 hours", and users type what they see.
  */
-const toNumber = (raw: string): number | null => {
+export const parseNumeric = (raw: string): number | null => {
   const cleaned = raw.replace(/[^0-9.\-]/g, "")
   if (cleaned === "" || cleaned === "-" || cleaned === ".") return null
   const parsed = parseFloat(cleaned)
   return isNaN(parsed) ? null : parsed
 }
+
+const toNumber = parseNumeric
 
 const NUMERIC_METHOD: Record<NumericOp, "eq" | "gt" | "lt" | "gte" | "lte"> = {
   "=": "eq",
@@ -353,6 +563,17 @@ const NUMERIC_METHOD: Record<NumericOp, "eq" | "gt" | "lt" | "gte" | "lte"> = {
   ">=": "gte",
   "<=": "lte",
 }
+
+/**
+ * "Is populated" / "is blank", against the stored column.
+ *
+ * Blank means SQL NULL — the same thing the "-" option in the multi-select
+ * dropdowns has always meant, and the same thing the cells render as "-".
+ * Nothing here looks at the formatted cell text, so an unset date is blank
+ * whatever the browser would have printed for it.
+ */
+const applyPresence = (query: any, column: string, op: PresenceOp): any =>
+  op === "blank" ? query.is(column, null) : query.not(column, "is", null)
 
 /**
  * Chains every active filter onto a Supabase query builder. Callers must apply
@@ -373,21 +594,63 @@ export const applyColumnFilters = (
     const column = meta[key]?.column
     if (!column) continue
 
+    const op = filterOp(filter)
+    if (isPresenceOp(op)) {
+      result = applyPresence(result, column, op)
+      continue
+    }
+
     switch (filter.kind) {
-      case "text":
-        result = result.ilike(column, `%${filter.value.trim()}%`)
+      case "text": {
+        const value = filter.value.trim()
+        switch (op as TextOp) {
+          case "is":
+            result = result.ilike(column, escapeLikeLiteral(value))
+            break
+          // "does not contain" / "is not" keep the rows that hold no value at
+          // all: in SQL `NULL NOT ILIKE 'x'` is NULL, which would drop them,
+          // and a user excluding a company does not mean to exclude the rows
+          // with no company along with it.
+          case "is_not":
+            result = result.or(
+              `${column}.not.ilike.${escapePostgrestValue(escapeLikeLiteral(value))},` +
+                `${column}.is.null`
+            )
+            break
+          case "not_contains":
+            result = result.or(
+              `${column}.not.ilike.${escapePostgrestValue(`%${value}%`)},${column}.is.null`
+            )
+            break
+          default:
+            result = result.ilike(column, `%${value}%`)
+        }
         break
+      }
 
       case "multi": {
         // "-" is what an empty cell renders as; picking it means "no value".
         const values = filter.values.filter((v) => v !== "-")
         const includesBlank = values.length !== filter.values.length
+        const list = values.map(escapePostgrestValue).join(",")
+
+        if ((op as MultiOp) === "not_in") {
+          if (values.length === 0) {
+            // Only "-" picked: exclude the rows that have no value.
+            if (includesBlank) result = result.not(column, "is", null)
+            break
+          }
+          result = includesBlank
+            ? result.not(column, "in", `(${list})`).not(column, "is", null)
+            : result.or(`${column}.not.in.(${list}),${column}.is.null`)
+          break
+        }
+
         if (values.length === 0) {
           if (includesBlank) result = result.is(column, null)
           break
         }
         if (includesBlank) {
-          const list = values.map(escapePostgrestValue).join(",")
           result = result.or(`${column}.in.(${list}),${column}.is.null`)
         } else {
           result = result.in(column, values)
@@ -398,17 +661,99 @@ export const applyColumnFilters = (
       case "numeric": {
         const value = toNumber(filter.value)
         if (value === null) break
-        result = result[NUMERIC_METHOD[filter.op]](column, value)
+        result = result[NUMERIC_METHOD[op as NumericOp]](column, value)
         break
       }
 
       case "date":
-        // from/to are whole-day bounds resolved in the browser's timezone.
-        if (filter.from) result = result.gte(column, filter.from)
-        if (filter.to) result = result.lte(column, filter.to)
+        // from/to are whole-day bounds resolved in the browser's timezone. For
+        // before/after both hold the same day, so the comparison is against the
+        // start or the end of it and the day itself is excluded.
+        switch (op as DateOp) {
+          case "before":
+            if (filter.from) result = result.lt(column, filter.from)
+            break
+          case "after":
+            if (filter.to) result = result.gt(column, filter.to)
+            break
+          default:
+            if (filter.from) result = result.gte(column, filter.from)
+            if (filter.to) result = result.lte(column, filter.to)
+        }
         break
     }
   }
 
   return result
+}
+
+// ---------------------------------------------------------------------------
+// Date parsing
+//
+// Pure helpers, kept here rather than in the filter UI so the route handlers
+// and the tests can use them too. The picker in
+// components/data-table-filters.tsx re-exports them.
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a user-typed mm/dd/yy or mm/dd/yyyy string. Two-digit years map to
+ * 2000+. Returns null for empty or malformed input (so a half-typed date
+ * doesn't blank out the table).
+ */
+export const parseInputDate = (s: string): Date | null => {
+  const m = s.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/)
+  if (!m) return null
+  const month = parseInt(m[1], 10)
+  const day = parseInt(m[2], 10)
+  let year = parseInt(m[3], 10)
+  if (m[3].length === 2) year += 2000
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null
+  const d = new Date(year, month - 1, day)
+  if (isNaN(d.getTime()) || d.getMonth() !== month - 1 || d.getDate() !== day) return null
+  return d
+}
+
+/**
+ * Parse the single date-filter input into a from/to pair. Accepts a lone date
+ * ("mm/dd/yy" -> that exact day, from === to) or a range ("mm/dd/yy-mm/dd/yy").
+ * Tolerant of messy input: each side is trimmed (so spaces around the "-" don't
+ * matter), en/em dashes are normalized to "-", and a backwards range (later date
+ * typed first) is swapped. Date parts use "/", so the first "-" separates the two
+ * ends; either end may be blank or half-typed, leaving that side open (null).
+ */
+export const parseDateRange = (s: string): { from: Date | null; to: Date | null } => {
+  const trimmed = s.trim().replace(/[‐-―−]/g, "-") // en/em/figure dashes, minus -> "-"
+  if (trimmed === "") return { from: null, to: null }
+  const dash = trimmed.indexOf("-")
+  if (dash === -1) {
+    const d = parseInputDate(trimmed)
+    return { from: d, to: d }
+  }
+  let from = parseInputDate(trimmed.slice(0, dash))
+  let to = parseInputDate(trimmed.slice(dash + 1))
+  if (from && to && from.getTime() > to.getTime()) [from, to] = [to, from]
+  return { from, to }
+}
+
+export const startOfDay = (d: Date) =>
+  new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+
+/**
+ * Resolves the typed mm/dd/yy text into the absolute instants the server
+ * compares against. The bounds are whole days in the *browser's* timezone,
+ * matching the toLocaleDateString() the cells are rendered with — sending the
+ * raw text would compare local days against UTC timestamps and slide rows onto
+ * the wrong day.
+ */
+export const buildDateFilter = (text: string, op?: DateOp): ColumnFilter => {
+  const { from, to } = parseDateRange(text)
+  return {
+    kind: "date",
+    text,
+    from: from ? new Date(from.getFullYear(), from.getMonth(), from.getDate()).toISOString() : null,
+    to: to
+      ? new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 999).toISOString()
+      : null,
+    ...(op ? { op } : {}),
+  }
 }

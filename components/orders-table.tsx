@@ -20,7 +20,21 @@ import {
   fetchAllRows,
   downloadCsv,
 } from "@/lib/table-utils"
-import { serializeColumnFilters, type ColumnFilter } from "@/lib/column-filters"
+import {
+  normalizeEditValue,
+  patchRows,
+  revertRows,
+  sameRow,
+  snapshotField,
+} from "@/lib/inline-edit"
+import {
+  ALL_ORDERS_FILTER_COLUMNS,
+  ORDERS_FILTER_COLUMNS,
+  PROJECT_ORDERS_FILTER_COLUMNS,
+  serializeColumnFilters,
+  type ColumnFilter,
+  type ColumnFilterMap,
+} from "@/lib/column-filters"
 import { OrdersDataTable, type DisplayField } from "@/components/orders-data-table"
 import { CreateOrderDialog } from "@/components/create-order-dialog"
 import { EditOrderDialog } from "@/components/edit-order-dialog"
@@ -29,6 +43,33 @@ import { User } from "@/lib/db/schema"
 import { ORDER_STATUSES, ORDER_STATUS_STYLES, type OrderStatus } from "@/lib/order-status"
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
+
+/**
+ * Which columns each endpoint will actually filter on. The routes drop anything
+ * outside their whitelist, so the table greys out those inputs rather than
+ * letting someone type a condition that quietly does nothing.
+ */
+const FILTERABLE_BY_API: Record<string, ColumnFilterMap> = {
+  "/api/orders": ORDERS_FILTER_COLUMNS,
+  "/api/all-orders": ALL_ORDERS_FILTER_COLUMNS,
+  "/api/project-orders": PROJECT_ORDERS_FILTER_COLUMNS,
+}
+
+/**
+ * Direct editing of single cells in the table body.
+ *
+ * `save` performs the write and must reject when it fails; `appliesTo` names
+ * the loaded rows that take the new value, for a field stored once but shown on
+ * several rows (an invoice number lives on the project, so it repeats on every
+ * order row of that project).
+ */
+export type InlineEditConfig = {
+  fields: string[]
+  save: (row: any, key: string, value: string | null) => Promise<void>
+  appliesTo?: (edited: any, candidate: any) => boolean
+  /** Tooltip line per column, e.g. what else an edit will touch. */
+  hints?: Record<string, string>
+}
 
 export function OrdersTable({
   onOrdersChange,
@@ -41,6 +82,7 @@ export function OrdersTable({
   statusFilter: statusFilterProp,
   onStatusFilterChange,
   onActiveFiltersChange,
+  inlineEdit,
 }: {
   /** Called after a row is created, edited or deleted — not after a re-read. */
   onOrdersChange?: () => void
@@ -63,6 +105,11 @@ export function OrdersTable({
    * so sibling widgets (the status tiles) can count the same rows.
    */
   onActiveFiltersChange?: (filters: { search: string; columnFilters: string }) => void
+  /**
+   * Cells that can be edited straight from this table. Omitted, the table is
+   * read-only apart from the row actions.
+   */
+  inlineEdit?: InlineEditConfig
 }) {
   const [orders, setOrders] = useState<any[]>([])
   // `loaded` gates the one full-page spinner, on the very first request.
@@ -126,6 +173,11 @@ export function OrdersTable({
     total: 0,
     totalPages: 0
   })
+
+  const filterableColumns = useMemo(() => {
+    const meta = FILTERABLE_BY_API[apiPath]
+    return meta ? new Set(Object.keys(meta)) : undefined
+  }, [apiPath])
 
   // Column filters go to the API alongside the search box, so they narrow the
   // whole table rather than just the rows already loaded.
@@ -407,6 +459,38 @@ export function OrdersTable({
         prev.map((o) => (o.id === order.id ? { ...o, order_status: previous } : o))
       )
       setError(err.message)
+    }
+  }
+
+  /**
+   * Saves one inline-edited cell.
+   *
+   * The row is updated in place and the table is *not* re-fetched: the active
+   * filters, the page and the scroll position are the context the user built up
+   * to find this row, and re-running the query would move the ground under them
+   * mid-edit. A row that no longer matches the filters therefore stays visible
+   * with its new value until the next query — a page change, a refresh, or the
+   * next filter edit.
+   *
+   * Failures revert the row, surface the error, and re-throw so the cell stays
+   * open on the typed value instead of looking saved.
+   */
+  const handleCellSave = async (order: any, key: string, value: string) => {
+    if (!inlineEdit) return
+    const matches = inlineEdit.appliesTo ?? sameRow
+    const next = normalizeEditValue(value)
+    const previous = snapshotField(orders, order, key, matches)
+
+    setOrders((prev) => patchRows(prev, key, next, previous))
+    setError("")
+
+    try {
+      await inlineEdit.save(order, key, next)
+      onOrdersChange?.()
+    } catch (err: any) {
+      setOrders((prev) => revertRows(prev, key, previous))
+      setError(err?.message || `Failed to save ${key}`)
+      throw err
     }
   }
 
@@ -722,7 +806,11 @@ export function OrdersTable({
             onColumnFiltersChange={setColumnFilters}
             filterOptions={filterOptions}
             onRequestFilterOptions={handleRequestFilterOptions}
+            filterableColumns={filterableColumns}
             totalRows={pagination.total}
+            editableFields={inlineEdit?.fields}
+            onCellSave={inlineEdit ? handleCellSave : undefined}
+            editHint={inlineEdit?.hints}
           />
         )}
       </div>
