@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import type { ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -35,7 +36,7 @@ import {
   type ColumnFilter,
   type ColumnFilterMap,
 } from "@/lib/column-filters"
-import { OrdersDataTable, type DisplayField } from "@/components/orders-data-table"
+import { OrdersDataTable, type DisplayField, type RowAction } from "@/components/orders-data-table"
 import { CreateOrderDialog } from "@/components/create-order-dialog"
 import { EditOrderDialog } from "@/components/edit-order-dialog"
 import useSWR from "swr"
@@ -63,6 +64,32 @@ const FILTERABLE_BY_API: Record<string, ColumnFilterMap> = {
  * several rows (an invoice number lives on the project, so it repeats on every
  * order row of that project).
  */
+/**
+ * A dialog reachable from a row's Actions cell.
+ *
+ * The table owns when it is open and re-reads the page once it saves, so the
+ * caller only has to say what the dialog is and where its payload goes. That
+ * keeps the endpoint knowledge on the page and the filter/paging state here,
+ * where it already lives: the re-read runs the same query the table is already
+ * showing, so a save never disturbs the filters that found the row.
+ */
+export type RowEditor = {
+  key: string
+  /** Tooltip on the row button. */
+  title: string
+  icon: ReactNode
+  /** Hidden for rows this editor can't apply to. */
+  available?: (row: any) => boolean
+  /** Performs the write. Rejecting keeps the dialog open, showing the error. */
+  save: (row: any, payload: any) => Promise<void>
+  /** Renders the dialog itself — usually one of the existing edit dialogs. */
+  render: (args: {
+    row: any
+    onClose: () => void
+    onUpdate: (payload: any) => Promise<{ success: boolean; error?: string }>
+  }) => ReactNode
+}
+
 export type InlineEditConfig = {
   fields: string[]
   save: (row: any, key: string, value: string | null) => Promise<void>
@@ -83,6 +110,7 @@ export function OrdersTable({
   onStatusFilterChange,
   onActiveFiltersChange,
   inlineEdit,
+  rowEditors,
 }: {
   /** Called after a row is created, edited or deleted — not after a re-read. */
   onOrdersChange?: () => void
@@ -110,6 +138,11 @@ export function OrdersTable({
    * read-only apart from the row actions.
    */
   inlineEdit?: InlineEditConfig
+  /**
+   * Row-level edit dialogs. Independent of `enableActions`, which wires this
+   * table's own order create/edit/delete against /api/orders.
+   */
+  rowEditors?: RowEditor[]
 }) {
   const [orders, setOrders] = useState<any[]>([])
   // `loaded` gates the one full-page spinner, on the very first request.
@@ -156,6 +189,9 @@ export function OrdersTable({
     if (!ready || !controlled) return
     if (statusFilterProp !== persistedStatus) setPersistedStatus(statusFilterProp!)
   }, [statusFilterProp])
+  // Which row editor is open, if any. Keyed rather than holding the editor
+  // itself so a re-render of the config can't strand an open dialog.
+  const [activeEditor, setActiveEditor] = useState<{ key: string; row: any } | null>(null)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [editingOrder, setEditingOrder] = useState<any>(null)
   const [deletingOrder, setDeletingOrder] = useState<any>(null)
@@ -494,6 +530,46 @@ export function OrdersTable({
     }
   }
 
+  /**
+   * Saves a row editor's dialog.
+   *
+   * Re-reads the current page afterwards rather than patching state: a dialog
+   * can change many fields across two tables at once, and the row on screen
+   * should be what the database now holds. The re-read carries the same
+   * search, status and column filters the table is already applying, so the
+   * user stays exactly where they were — a row that no longer matches simply
+   * isn't in the refreshed page.
+   */
+  const handleEditorUpdate = async (editor: RowEditor, row: any, payload: any) => {
+    try {
+      await editor.save(row, payload)
+    } catch (err: any) {
+      // Reported inside the dialog, which stays open on the entered values.
+      return { success: false, error: err?.message || `Failed to save ${editor.title}` }
+    }
+    setActiveEditor(null)
+    setError("")
+    await fetchOrders(currentPage)
+    onOrdersChange?.()
+    return { success: true }
+  }
+
+  const editorActions: RowAction[] | undefined = useMemo(
+    () =>
+      rowEditors?.map((editor) => ({
+        key: editor.key,
+        title: editor.title,
+        icon: editor.icon,
+        available: editor.available,
+        onClick: (row: any) => setActiveEditor({ key: editor.key, row }),
+      })),
+    [rowEditors]
+  )
+
+  const openEditor = activeEditor
+    ? rowEditors?.find((editor) => editor.key === activeEditor.key)
+    : undefined
+
   const handleDeleteOrder = async () => {
     if (!deletingOrder) return
     setDeleteLoading(true)
@@ -811,6 +887,7 @@ export function OrdersTable({
             editableFields={inlineEdit?.fields}
             onCellSave={inlineEdit ? handleCellSave : undefined}
             editHint={inlineEdit?.hints}
+            rowActions={editorActions}
           />
         )}
       </div>
@@ -827,6 +904,14 @@ export function OrdersTable({
       {editingOrder && (
         <EditOrderDialog order={editingOrder} onClose={() => setEditingOrder(null)} onUpdate={handleUpdateOrder} />
       )}
+
+      {/* Row editors — the dialogs reached from a row's Actions cell. */}
+      {openEditor && activeEditor &&
+        openEditor.render({
+          row: activeEditor.row,
+          onClose: () => setActiveEditor(null),
+          onUpdate: (payload: any) => handleEditorUpdate(openEditor, activeEditor.row, payload),
+        })}
 
       {/* Delete Confirmation — owner/admin only (gated above and server-side) */}
       {deletingOrder && (

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/my-app-auth';
 import { client } from '@/lib/db/drizzle';
+import { canEditProjectOrders } from '@/lib/project-order-edits';
 
 // Enum types used by the projects table, keyed by the form field that uses them
 const PROJECT_ENUM_TYPES = [
@@ -15,14 +16,19 @@ const PROJECT_ENUM_TYPES = [
   'sales_person',
 ];
 
-// GET /api/projects/enums - Postgres enum labels for projects dropdowns (owner only)
+// GET /api/projects/enums - Postgres enum labels for the projects dropdowns.
+//
+// Owners, plus whoever may edit from the Project Orders shared view: that view
+// reuses the project edit dialog, and a dropdown whose options failed to load
+// offers no way to keep the value a row already has. These are enum *labels* —
+// schema, not project data.
 export async function GET() {
   try {
     const user = await getCurrentUser();
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    if (user.role !== 'owner') {
+    if (user.role !== 'owner' && !canEditProjectOrders(user.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

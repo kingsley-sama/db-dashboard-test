@@ -22,10 +22,18 @@ export function EditProjectDialog({
   project,
   onClose,
   onUpdate,
+  showIntakePanel = true,
 }: {
   project: any
   onClose: () => void
   onUpdate: (project: any) => Promise<{ success: boolean; error?: string }>
+  /**
+   * The questionnaire handover, which starts the intake automation when it
+   * flips to 'Yes'. Left out where this dialog is reused outside the Projects
+   * module (the Project Orders shared view), so an invoicing edit can never
+   * kick off intake as a side effect.
+   */
+  showIntakePanel?: boolean
 }) {
   const [formData, setFormData] = useState({
     ...project,
@@ -421,13 +429,15 @@ export function EditProjectDialog({
               {renderEnumSelect("deposit", "Deposit", "yes_no_values")}
               {renderEnumSelect("first_or_next_project", "First/Next Project", "first_next_project")}
 
-              <ProjectIntakePanel
-                projectId={project.id}
-                initialQuestionnaireReceived={project.questionnaire_received}
-                onChange={(value) =>
-                  setFormData((prev: any) => ({ ...prev, questionnaire_received: value }))
-                }
-              />
+              {showIntakePanel && (
+                <ProjectIntakePanel
+                  projectId={project.id}
+                  initialQuestionnaireReceived={project.questionnaire_received}
+                  onChange={(value) =>
+                    setFormData((prev: any) => ({ ...prev, questionnaire_received: value }))
+                  }
+                />
+              )}
               <div>
                 <label className="text-sm font-medium" style={{ color: '#012e64' }}>Path to Files</label>
                 <Input name="path_to_files" value={formData.path_to_files || ""} onChange={handleChange} className="bg-white" style={{ borderColor: '#8d9499', color: '#012e64' }} />

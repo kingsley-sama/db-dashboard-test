@@ -105,17 +105,30 @@ export const matchesDate = (raw: any, filter: { text: string }): boolean => {
 const inputClass = "w-full min-w-0 px-2 py-1 rounded text-xs bg-white"
 const inputStyle = { border: "1px solid #cbd5e1", color: "#012e64" } as const
 
+/** Whether a trigger is still within the viewport, even partly. */
+const isOnScreen = (r: DOMRect): boolean =>
+  r.bottom > 0 && r.top < window.innerHeight && r.right > 0 && r.left < window.innerWidth
+
 /**
- * Closes a floating panel when the page moves under it.
+ * Keeps a floating panel attached to its trigger, and closes it when the user
+ * clicks away, presses Escape, or scrolls the trigger out of sight.
  *
  * The panels are position:fixed so they can escape the table's overflow, which
- * means an outside scroll or a resize would leave them detached from their
- * trigger. Scrolling *inside* the panel is the user reading its own list.
+ * means a scroll or a resize outside them would otherwise leave them stranded
+ * where the trigger used to be. `reposition` moves the panel back onto the
+ * trigger and reports whether the trigger is still on screen; only when it
+ * isn't does the panel close. Simply closing on any outside scroll — which is
+ * what these panels used to do — also closed them on the scroll the opening
+ * click itself causes when the trigger is only partly visible, so a filter at
+ * the edge of a table this wide flashed open and shut.
+ *
+ * Scrolling *inside* the panel is the user reading its own list.
  */
 const useDismissOnOutside = (
   open: boolean,
   setOpen: (open: boolean) => void,
-  refs: RefObject<HTMLElement | null>[]
+  refs: RefObject<HTMLElement | null>[],
+  reposition?: () => boolean
 ) => {
   useEffect(() => {
     if (!open) return
@@ -129,6 +142,7 @@ const useDismissOnOutside = (
     }
     const onScroll = (e: Event) => {
       if (insideAny(e.target as Node)) return
+      if (reposition?.()) return
       close()
     }
     document.addEventListener("mousedown", onDocClick)
@@ -168,25 +182,30 @@ export function FilterOperatorSelect({
   const panelRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
 
-  useDismissOnOutside(open, setOpen, [panelRef, btnRef])
-
   const kind: FilterKind = filter.kind
   const current = filterOp(filter)
   const meta = operatorMeta(kind, current)
   const operators = FILTER_OPERATORS[kind]
 
+  /** Puts the panel under the button. False once the button is off screen. */
+  const place = () => {
+    const r = btnRef.current?.getBoundingClientRect()
+    if (!r || !isOnScreen(r)) return false
+    const width = 170
+    const height = operators.length * 30 + 8
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8))
+    const top =
+      r.bottom + height > window.innerHeight - 8
+        ? Math.max(8, r.top - height - 4)
+        : r.bottom + 4
+    setPos({ top, left })
+    return true
+  }
+
+  useDismissOnOutside(open, setOpen, [panelRef, btnRef], place)
+
   const toggleOpen = () => {
-    if (!open && btnRef.current) {
-      const r = btnRef.current.getBoundingClientRect()
-      const width = 170
-      const height = operators.length * 30 + 8
-      const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8))
-      const top =
-        r.bottom + height > window.innerHeight - 8
-          ? Math.max(8, r.top - height - 4)
-          : r.bottom + 4
-      setPos({ top, left })
-    }
+    if (!open) place()
     setOpen((o) => !o)
   }
 
@@ -282,12 +301,18 @@ export function MultiSelectFilter({
   const panelRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null)
 
-  useDismissOnOutside(open, setOpen, [panelRef, btnRef])
+  const place = () => {
+    const r = btnRef.current?.getBoundingClientRect()
+    if (!r || !isOnScreen(r)) return false
+    setPos({ top: r.bottom + 4, left: r.left, width: Math.max(r.width, 180) })
+    return true
+  }
+
+  useDismissOnOutside(open, setOpen, [panelRef, btnRef], place)
 
   const toggleOpen = () => {
-    if (!open && btnRef.current) {
-      const r = btnRef.current.getBoundingClientRect()
-      setPos({ top: r.bottom + 4, left: r.left, width: Math.max(r.width, 180) })
+    if (!open) {
+      place()
       onOpen?.()
     }
     setOpen((o) => !o)
@@ -448,18 +473,22 @@ export function DateRangeFilter({
   const { from, to } = parseDateRange(filter.text)
   const selected: DateRange | undefined = from || to ? { from: from ?? undefined, to: to ?? undefined } : undefined
 
-  useDismissOnOutside(open, setOpen, [panelRef, btnRef])
+  const place = () => {
+    const r = btnRef.current?.getBoundingClientRect()
+    if (!r || !isOnScreen(r)) return false
+    // Keep the panel on screen: flip above when it would run off the bottom,
+    // and pull it left when it would run off the right edge.
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8))
+    const estHeight = 360
+    const top = r.bottom + estHeight > window.innerHeight - 8 ? Math.max(8, r.top - estHeight - 4) : r.bottom + 4
+    setPos({ top, left })
+    return true
+  }
+
+  useDismissOnOutside(open, setOpen, [panelRef, btnRef], place)
 
   const toggleOpen = () => {
-    if (!open && btnRef.current) {
-      const r = btnRef.current.getBoundingClientRect()
-      // Keep the panel on screen: flip above when it would run off the bottom,
-      // and pull it left when it would run off the right edge.
-      const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8))
-      const estHeight = 360
-      const top = r.bottom + estHeight > window.innerHeight - 8 ? Math.max(8, r.top - estHeight - 4) : r.bottom + 4
-      setPos({ top, left })
-    }
+    if (!open) place()
     setOpen((o) => !o)
   }
 

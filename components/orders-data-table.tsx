@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import type { ReactNode } from "react"
 import {
   ActiveFilterChips,
   ColumnFilterControl,
@@ -31,6 +32,22 @@ export type DisplayField = {
   label: string
   width: string
   maxWidth?: string
+}
+
+/**
+ * An extra button in a row's Actions cell, beside Edit and Delete.
+ *
+ * A Project Orders row is a project *and* an order, so it needs one action per
+ * record rather than the single Edit the orders table has.
+ */
+export type RowAction = {
+  key: string
+  /** Tooltip, and the accessible name. */
+  title: string
+  icon: ReactNode
+  onClick: (row: any) => void
+  /** Hidden for rows the action can't apply to — an order-less project row. */
+  available?: (row: any) => boolean
 }
 
 const displayFields: DisplayField[] = [
@@ -154,6 +171,7 @@ export function OrdersDataTable({
   editableFields,
   onCellSave,
   editHint,
+  rowActions,
 }: {
   orders: any[]
   onEdit?: (order: any) => void
@@ -195,6 +213,8 @@ export function OrdersDataTable({
   onCellSave?: (order: any, key: string, value: string) => Promise<void>
   /** Extra tooltip line shown on editable cells (per column key). */
   editHint?: Record<string, string>
+  /** Extra per-row buttons, rendered before Edit and Delete. */
+  rowActions?: RowAction[]
 }) {
   const visibleFields = useMemo(
     () =>
@@ -227,7 +247,7 @@ export function OrdersDataTable({
       : undefined
   const [colWidths, setColWidths] = useState<number[]>([])
   const [tableWidth, setTableWidth] = useState(0)
-  const showActions = Boolean(onEdit || onDelete)
+  const showActions = Boolean(onEdit || onDelete || rowActions?.length)
 
   const measure = () => {
     if (!theadRef.current || !scrollRef.current) return
@@ -710,6 +730,22 @@ export function OrdersDataTable({
                     }}
                   >
                     <div className="flex items-center justify-center gap-1">
+                      {rowActions?.map((action) =>
+                        action.available && !action.available(order) ? null : (
+                          <Button
+                            key={action.key}
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => action.onClick(order)}
+                            title={action.title}
+                            aria-label={action.title}
+                            className="h-8 w-8 p-0 hover:bg-blue-100"
+                            style={{ color: '#012e64' }}
+                          >
+                            {action.icon}
+                          </Button>
+                        )
+                      )}
                       {onEdit && (
                         <Button
                           variant="ghost"

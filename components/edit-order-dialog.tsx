@@ -22,10 +22,18 @@ export function EditOrderDialog({
   order,
   onClose,
   onUpdate,
+  showQuestionnaire = true,
 }: {
   order: any
   onClose: () => void
   onUpdate: (order: any) => Promise<{ success: boolean; error?: string }>
+  /**
+   * The questionnaire flag, which the orders API writes through to the project
+   * and whose 'No' -> 'Yes' transition starts the intake automation. Left out
+   * where this dialog is reused outside the Orders module (the Project Orders
+   * shared view), which has no business starting intake.
+   */
+  showQuestionnaire?: boolean
 }) {
   const normalizePmType = (val: string | null | undefined) => {
     if (!val) return ""
@@ -290,20 +298,22 @@ export function EditOrderDialog({
                   style={{ borderColor: '#8d9499', color: '#012e64' }}
                 />
               </div>
-              <div>
-                <label className="text-sm font-medium" style={{ color: '#012e64' }}>Questionnaire Received</label>
-                <select
-                  name="questionnaire_received"
-                  value={formData.questionnaire_received || ""}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 rounded-md bg-white h-10"
-                  style={{ border: '1px solid #8d9499', color: '#012e64' }}
-                >
-                  <option value="">Select...</option>
-                  <option value="Yes">Yes</option>
-                  <option value="No">No</option>
-                </select>
-              </div>
+              {showQuestionnaire && (
+                <div>
+                  <label className="text-sm font-medium" style={{ color: '#012e64' }}>Questionnaire Received</label>
+                  <select
+                    name="questionnaire_received"
+                    value={formData.questionnaire_received || ""}
+                    onChange={handleChange}
+                    className="w-full px-3 py-2 rounded-md bg-white h-10"
+                    style={{ border: '1px solid #8d9499', color: '#012e64' }}
+                  >
+                    <option value="">Select...</option>
+                    <option value="Yes">Yes</option>
+                    <option value="No">No</option>
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="text-sm font-medium" style={{ color: '#012e64' }}>Deposit</label>
                 <select
