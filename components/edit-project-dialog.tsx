@@ -3,6 +3,7 @@
 import type React from "react"
 
 import { useState, useEffect, useRef } from "react"
+import type { ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -23,10 +24,17 @@ export function EditProjectDialog({
   onClose,
   onUpdate,
   showIntakePanel = true,
+  contextBanner,
 }: {
   project: any
   onClose: () => void
   onUpdate: (project: any) => Promise<{ success: boolean; error?: string }>
+  /**
+   * Shown above the form, naming the record being edited. Set where the dialog
+   * is opened from a view whose rows carry more than one record (the Project
+   * Orders shared view), so it is never a question which one this form saves.
+   */
+  contextBanner?: ReactNode
   /**
    * The questionnaire handover, which starts the intake automation when it
    * flips to 'Yes'. Left out where this dialog is reused outside the Projects
@@ -316,6 +324,7 @@ export function EditProjectDialog({
           </div>
         </CardHeader>
         <CardContent>
+          {contextBanner}
           {error && (
             <Alert variant="destructive" className="mb-4">
               <AlertCircle className="h-4 w-4" />
@@ -333,6 +342,11 @@ export function EditProjectDialog({
           )}
           <form id="edit-project-form" onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
+              {/* Named like Invoicing and Dates below, so the form reads as a
+                  set of labelled groups rather than a run of fields. */}
+              <div className="col-span-2">
+                <h3 className="text-base font-semibold mb-3" style={{ color: '#012e64' }}>Project</h3>
+              </div>
               <div>
                 <label className="text-sm font-medium" style={{ color: '#012e64' }}>Project ID</label>
                 <Input name="project_id" value={formData.project_id} disabled className="bg-gray-50" style={{ borderColor: '#8d9499' }} />

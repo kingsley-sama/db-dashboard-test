@@ -6,7 +6,8 @@ import { EditProjectDialog } from '@/components/edit-project-dialog'
 import { projectOrdersFields } from '@/components/project-orders-columns'
 import { readJsonResponse } from '@/lib/table-utils'
 import { INLINE_EDITABLE_FIELDS } from '@/lib/project-order-edits'
-import { FolderPen, Info, Pencil, SquarePen } from 'lucide-react'
+import { RecordScopeBanner } from '@/components/record-scope-banner'
+import { Building2, Info, Package, Pencil } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
 // A row of project_orders_view is two records: one project, one order. So the
@@ -51,6 +52,13 @@ const editableHalf = (payload: Record<string, any>) =>
     Object.entries(payload).filter(([key]) => !IDENTITY_AND_AUTOMATION.has(key))
   )
 
+/** How each record is named in the dialog banners. */
+const orderName = (row: any) =>
+  row.order_id || (row.order_number ? `Order #${row.order_number}` : 'This order')
+
+const projectName = (row: any) =>
+  [row.project_id, row.project_name].filter(Boolean).join(' — ') || 'This project'
+
 const invoiceNumberHint =
   'Stored on the project, so it applies to every order row of that project'
 
@@ -70,8 +78,9 @@ export function ProjectOrdersClient({ canEdit = false }: { canEdit?: boolean }) 
     ? [
         {
           key: 'order',
-          title: 'Edit this order',
-          icon: <SquarePen className="w-4 h-4" />,
+          title: 'Edit this order — supplier, quantity, cost, delivery dates',
+          label: 'Order',
+          icon: <Package className="w-4 h-4" />,
           // A project with no orders has an empty order half to edit.
           available: (row) => row.order_pk != null,
           save: (row, payload) =>
@@ -90,13 +99,31 @@ export function ProjectOrdersClient({ canEdit = false }: { canEdit?: boolean }) 
               onClose={onClose}
               onUpdate={onUpdate}
               showQuestionnaire={false}
+              contextBanner={
+                <RecordScopeBanner
+                  scope="order"
+                  name={orderName(row)}
+                  facts={[
+                    row.product_name || row.product,
+                    row.quantity != null ? `Qty ${row.quantity}` : null,
+                    row.supplier,
+                  ]}
+                  note="Saved on this order alone — the project's other orders are untouched."
+                  related={{
+                    scope: 'project',
+                    name: projectName(row),
+                    hint: 'invoice number, invoice dates and contacts live here — edit them with the Project button on the row',
+                  }}
+                />
+              }
             />
           ),
         },
         {
           key: 'project',
-          title: 'Edit this row’s project (invoicing, dates, contacts)',
-          icon: <FolderPen className="w-4 h-4" />,
+          title: 'Edit this row’s project — invoice number, invoice dates, contacts',
+          label: 'Project',
+          icon: <Building2 className="w-4 h-4" />,
           save: (row, payload) => saveRow(row, { project: editableHalf(payload) }),
           render: ({ row, onClose, onUpdate }) => (
             <EditProjectDialog
@@ -104,6 +131,23 @@ export function ProjectOrdersClient({ canEdit = false }: { canEdit?: boolean }) 
               onClose={onClose}
               onUpdate={onUpdate}
               showIntakePanel={false}
+              contextBanner={
+                <RecordScopeBanner
+                  scope="project"
+                  name={projectName(row)}
+                  facts={[row.company_name, row.client_contact_name, row.project_status]}
+                  note="Saved on the project, so it applies to every order row of this project."
+                  related={
+                    row.order_pk == null
+                      ? undefined
+                      : {
+                          scope: 'order',
+                          name: orderName(row),
+                          hint: 'supplier, quantity, cost and delivery dates live here — edit them with the Order button on the row',
+                        }
+                  }
+                />
+              }
             />
           ),
         },
@@ -143,10 +187,12 @@ export function ProjectOrdersClient({ canEdit = false }: { canEdit?: boolean }) 
           <Pencil className="w-4 h-4 shrink-0 mt-0.5" style={{ color: '#012e64' }} />
           <span>
             <strong>Invoice Number</strong> is editable straight in the table — click the cell, type,
-            press Enter. For anything else, the Actions column opens the row’s{' '}
-            <strong>order</strong> or its <strong>project</strong>. Project fields — invoice number
-            and dates included — are stored once per project, so they apply to every order row of
-            that project. Questionnaire and intake stay under Projects.
+            press Enter. For anything else, the Actions column has two buttons: <strong>Order</strong>{' '}
+            edits that one order (supplier, quantity, cost, delivery dates), and{' '}
+            <strong>Project</strong> edits the project it belongs to (invoice number, invoice dates,
+            contacts). Project fields are stored once per project, so they apply to every order row
+            of that project — each dialog says which record it is saving. Questionnaire and intake
+            stay under Projects.
           </span>
         </div>
       )}

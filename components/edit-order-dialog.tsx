@@ -3,6 +3,7 @@
 import type React from "react"
 
 import { useState, useEffect, useRef } from "react"
+import type { ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,6 +12,20 @@ import { X, AlertCircle } from "lucide-react"
 import { Textarea } from "@/components/ui/textarea"
 import { ORDER_STATUSES } from "@/lib/order-status"
 import { useModalEscape, blockEnterKey } from "@/lib/modal-keyboard"
+
+// The suppliers offered below. Named so the "keep what is stored" guard on
+// that select can tell an unlisted value from a listed one.
+const SUPPLIERS = [
+  "Studio98",
+  "Khoa",
+  "Nhat",
+  "3D Sakura",
+  "Boris",
+  "Warih",
+  "Alamin",
+  "Aliyu",
+  "Takoua",
+]
 
 interface ProductCode {
   id: number
@@ -23,10 +38,17 @@ export function EditOrderDialog({
   onClose,
   onUpdate,
   showQuestionnaire = true,
+  contextBanner,
 }: {
   order: any
   onClose: () => void
   onUpdate: (order: any) => Promise<{ success: boolean; error?: string }>
+  /**
+   * Shown above the form, naming the record being edited. Set where the dialog
+   * is opened from a view whose rows carry more than one record (the Project
+   * Orders shared view), so it is never a question which one this form saves.
+   */
+  contextBanner?: ReactNode
   /**
    * The questionnaire flag, which the orders API writes through to the project
    * and whose 'No' -> 'Yes' transition starts the intake automation. Left out
@@ -179,6 +201,7 @@ export function EditOrderDialog({
           </div>
         </CardHeader>
         <CardContent>
+          {contextBanner}
           {error && (
             <Alert variant="destructive" className="mb-4">
               <AlertCircle className="h-4 w-4" />
@@ -196,6 +219,11 @@ export function EditOrderDialog({
           )}
           <form id="edit-order-form" onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
+              {/* Named like the sections further down, so the form reads as a
+                  set of labelled groups rather than a run of fields. */}
+              <div className="col-span-2">
+                <h3 className="text-base font-semibold mb-3" style={{ color: '#012e64' }}>Order</h3>
+              </div>
               <div>
                 <label className="text-sm font-medium" style={{ color: '#012e64' }}>Project ID</label>
                 <Input name="project_id" value={formData.project_id} onChange={handleChange} disabled className="bg-gray-50" style={{ borderColor: '#8d9499' }} />
@@ -210,6 +238,12 @@ export function EditOrderDialog({
                   style={{ border: '1px solid #8d9499', color: '#012e64' }}
                 >
                   <option value="">Select supplier...</option>
+                  {/* Same as Product Name: a stored supplier missing from this
+                      hard-coded list stays selected instead of being cleared
+                      by a save that never meant to touch it. */}
+                  {formData.supplier && !SUPPLIERS.includes(formData.supplier) && (
+                    <option value={formData.supplier}>{formData.supplier}</option>
+                  )}
                   <option value="Studio98">Studio98</option>
                   <option value="Khoa">Khoa</option>
                   <option value="Nhat">Nhat</option>
@@ -244,6 +278,15 @@ export function EditOrderDialog({
                   style={{ border: '1px solid #8d9499', color: '#012e64' }}
                 >
                   <option value="">Select a product...</option>
+                  {/* Keep the stored value selectable when it isn't in the
+                      product codes — a retired code, or the list still
+                      loading. Without it the select falls back to "Select a
+                      product...", and saving would clear a value nobody
+                      touched. */}
+                  {formData.product_name &&
+                    !productCodes.some((product) => product.name === formData.product_name) && (
+                      <option value={formData.product_name}>{formData.product_name}</option>
+                    )}
                   {productCodes.map((product) => (
                     <option key={product.id} value={product.name}>
                       {product.name}

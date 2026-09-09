@@ -78,6 +78,8 @@ export type RowEditor = {
   /** Tooltip on the row button. */
   title: string
   icon: ReactNode
+  /** Word on the row button — see RowAction.label. */
+  label?: string
   /** Hidden for rows this editor can't apply to. */
   available?: (row: any) => boolean
   /** Performs the write. Rejecting keeps the dialog open, showing the error. */
@@ -560,6 +562,7 @@ export function OrdersTable({
         key: editor.key,
         title: editor.title,
         icon: editor.icon,
+        label: editor.label,
         available: editor.available,
         onClick: (row: any) => setActiveEditor({ key: editor.key, row }),
       })),

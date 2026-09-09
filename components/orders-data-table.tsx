@@ -45,6 +45,12 @@ export type RowAction = {
   /** Tooltip, and the accessible name. */
   title: string
   icon: ReactNode
+  /**
+   * Word on the button. Two actions on one row are told apart by reading, not
+   * by decoding a pair of icons, so anything with more than one action should
+   * set it. The Actions column widens to fit.
+   */
+  label?: string
   onClick: (row: any) => void
   /** Hidden for rows the action can't apply to — an order-less project row. */
   available?: (row: any) => boolean
@@ -248,6 +254,10 @@ export function OrdersDataTable({
   const [colWidths, setColWidths] = useState<number[]>([])
   const [tableWidth, setTableWidth] = useState(0)
   const showActions = Boolean(onEdit || onDelete || rowActions?.length)
+  // Labelled actions need room for the words; icon-only rows keep the old width.
+  const actionsWidth = rowActions?.some((action) => action.label)
+    ? 'min-w-[210px]'
+    : 'min-w-[110px]'
 
   const measure = () => {
     if (!theadRef.current || !scrollRef.current) return
@@ -419,7 +429,7 @@ export function OrdersDataTable({
       })}
       {showActions && (
         <th
-          className={`${fixedWidths ? '' : 'min-w-[110px]'} px-4 py-3 text-center font-semibold sticky right-0 z-40`}
+          className={`${fixedWidths ? '' : actionsWidth} px-4 py-3 text-center font-semibold sticky right-0 z-40`}
           style={{
             backgroundColor: '#f8f8f8',
             color: '#012e64',
@@ -468,7 +478,7 @@ export function OrdersDataTable({
       })}
       {showActions && (
         <th
-          className="min-w-[110px] px-2 py-2 sticky right-0 z-40 text-center align-middle"
+          className={`${actionsWidth} px-2 py-2 sticky right-0 z-40 text-center align-middle`}
           style={{ backgroundColor: '#f8f8f8', borderLeft: '2px solid #e5e5e5' }}
         >
           {activeFilterCount > 0 && (
@@ -722,7 +732,7 @@ export function OrdersDataTable({
                 })}
                 {showActions && (
                   <td
-                    className="min-w-[110px] px-4 py-3 sticky right-0 z-10 text-center"
+                    className={`${actionsWidth} px-4 py-3 sticky right-0 z-10 text-center`}
                     style={{
                       backgroundColor: rowBg,
                       borderLeft: '2px solid #e5e5e5',
@@ -739,10 +749,15 @@ export function OrdersDataTable({
                             onClick={() => action.onClick(order)}
                             title={action.title}
                             aria-label={action.title}
-                            className="h-8 w-8 p-0 hover:bg-blue-100"
+                            className={
+                              action.label
+                                ? 'h-8 px-2 gap-1.5 font-medium hover:bg-blue-100'
+                                : 'h-8 w-8 p-0 hover:bg-blue-100'
+                            }
                             style={{ color: '#012e64' }}
                           >
                             {action.icon}
+                            {action.label && <span className="text-xs">{action.label}</span>}
                           </Button>
                         )
                       )}
