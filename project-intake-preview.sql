@@ -43,10 +43,10 @@ SELECT
   p.project_type,
   p.project_status,
   p.client_contact_name,
-  p.company_email,
+  COALESCE(proposal_inputs.email_address, p.company_email) AS company_email,
   p.questionnaire_received,
-  p.order_confirmation_date,
-  p.path_to_files,
+  COALESCE(proposal_inputs.start_date, p.order_confirmation_date) AS order_confirmation_date,
+  COALESCE(proposal_inputs.path_to_files, p.path_to_files) AS path_to_files,
   p.delivery_completion_date,
   p.created_at,
   COALESCE(
@@ -63,6 +63,14 @@ SELECT
   (SELECT count(*) FROM public.orders o WHERE o.project_id = p.project_id)
     AS existing_order_count
 FROM public.projects p
+LEFT JOIN LATERAL (
+    SELECT pr.company_email AS email_address,
+      pr.proposal_date AS start_date,
+      pr.path_to_files
+    FROM public.proposals pr
+  WHERE pr.project_id = p.project_id
+  LIMIT 1
+) proposal_inputs ON true
 LEFT JOIN public.project_intake_runs r ON r.project_id = p.project_id;
 
 -- ---------------------------------------------------------------------------
