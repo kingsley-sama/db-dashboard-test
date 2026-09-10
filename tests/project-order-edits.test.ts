@@ -12,10 +12,13 @@ import assert from "node:assert/strict"
 
 import {
   INLINE_EDITABLE_FIELDS,
+  MIRRORED_FIELDS,
   PROJECT_ORDER_ORDER_FIELDS,
   PROJECT_ORDER_PROJECT_FIELDS,
   buildProjectOrderUpdate,
   canEditProjectOrders,
+  fieldsInGroup,
+  groupsOf,
   isProjectScopedField,
   orderMatchesExpectation,
   parseExpectedOrder,
@@ -350,4 +353,84 @@ test("saving leaves the active filters exactly as they were", () => {
     ["not(delivery_completion_date,is,null)", "ilike(company_name,Company A)"]
   )
   assert.ok(Object.values(filters).every(isFilterActive))
+})
+
+// ---------------------------------------------------------------------------
+// The combined edit form is generated from these maps, so the maps have to
+// carry everything a field needs to be rendered — and nothing the API would
+// then refuse.
+// ---------------------------------------------------------------------------
+
+const halves = {
+  project: PROJECT_ORDER_PROJECT_FIELDS,
+  order: PROJECT_ORDER_ORDER_FIELDS,
+}
+
+test("every field belongs to a section", () => {
+  for (const [half, fields] of Object.entries(halves)) {
+    for (const [key, meta] of Object.entries(fields)) {
+      assert.ok(meta.group && meta.group.trim(), `${half}.${key} has no group`)
+      assert.ok(meta.label && meta.label.trim(), `${half}.${key} has no label`)
+    }
+  }
+})
+
+test("every choice field says where its choices come from", () => {
+  for (const [half, fields] of Object.entries(halves)) {
+    for (const [key, meta] of Object.entries(fields)) {
+      if (meta.type !== "enum") continue
+      assert.ok(
+        (meta.options && meta.options.length > 0) || meta.optionsFrom,
+        `${half}.${key} is a choice field with no choices`
+      )
+    }
+  }
+})
+
+test("the sections cover every field exactly once", () => {
+  for (const [half, fields] of Object.entries(halves)) {
+    const grouped = groupsOf(fields).flatMap((group) =>
+      fieldsInGroup(fields, group).map(([key]) => key)
+    )
+    assert.deepEqual(
+      [...grouped].sort(),
+      Object.keys(fields).sort(),
+      `${half}: grouping loses or repeats a field`
+    )
+    assert.equal(grouped.length, new Set(grouped).size, `${half}: a field is in two groups`)
+  }
+})
+
+test("a column on both tables is shown once and written to both", () => {
+  // The view exposes one column for these names, so the form can't tell the
+  // two copies apart — it shows one control and sends the value to each half,
+  // which keeps whichever copy the view reads back in step with what was set.
+  assert.deepEqual(MIRRORED_FIELDS.sort(), ["deposit", "pm_type"])
+  for (const key of MIRRORED_FIELDS) {
+    assert.ok(PROJECT_ORDER_PROJECT_FIELDS[key], `${key} missing from the project half`)
+    assert.ok(PROJECT_ORDER_ORDER_FIELDS[key], `${key} missing from the order half`)
+    // Both halves must actually accept it, or the mirrored write would fail.
+    assert.equal(project({ [key]: "Yes" }).ok, true, `project half refuses ${key}`)
+    assert.equal(order({ [key]: "Yes" }).ok, true, `order half refuses ${key}`)
+  }
+  // Every other name is on one side only, so nothing else is ambiguous.
+  const onBoth = Object.keys(PROJECT_ORDER_PROJECT_FIELDS).filter(
+    (key) => key in PROJECT_ORDER_ORDER_FIELDS
+  )
+  assert.deepEqual(onBoth.sort(), MIRRORED_FIELDS.sort())
+})
+
+test("everything the form can show, the API accepts", () => {
+  // The form is generated from these maps; a field it renders but the route
+  // refuses would fail only at save time, in front of the user.
+  const sample = (meta: { type: string }) =>
+    meta.type === "date" ? "2025-03-04" : meta.type === "number" || meta.type === "integer" ? "3" : "x"
+  for (const [half, fields] of Object.entries(halves)) {
+    const build = half === "project" ? project : order
+    for (const [key, meta] of Object.entries(fields)) {
+      assert.equal(build({ [key]: sample(meta) }).ok, true, `${half}.${key} is rendered but refused`)
+      // And clearing it has to be accepted too — that is how a value is removed.
+      assert.deepEqual(build({ [key]: "" }), { ok: true, update: { [key]: null } })
+    }
+  }
 })

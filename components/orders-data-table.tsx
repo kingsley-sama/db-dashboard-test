@@ -255,9 +255,9 @@ export function OrdersDataTable({
   const [tableWidth, setTableWidth] = useState(0)
   const showActions = Boolean(onEdit || onDelete || rowActions?.length)
   // Labelled actions need room for the words; icon-only rows keep the old width.
-  const actionsWidth = rowActions?.some((action) => action.label)
-    ? 'min-w-[210px]'
-    : 'min-w-[110px]'
+  const labelledActions = rowActions?.filter((action) => action.label).length ?? 0
+  const actionsWidth =
+    labelledActions === 0 ? 'min-w-[110px]' : labelledActions === 1 ? 'min-w-[150px]' : 'min-w-[210px]'
 
   const measure = () => {
     if (!theadRef.current || !scrollRef.current) return

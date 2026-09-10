@@ -16,22 +16,74 @@
 
 export type FieldType = "text" | "enum" | "number" | "integer" | "date"
 
+/**
+ * Where a select's choices come from, when they aren't a fixed list:
+ *   "product_codes"  the product_codes table, via /api/product-codes
+ *   "enum:<name>"    a Postgres enum, via /api/projects/enums
+ *   "order_status"   the order status values shared with the badges and tiles
+ */
+export type OptionSource = string
+
 export type ProjectOrderFieldMeta = {
   label: string
   type: FieldType
   /** Text/enum only. */
   maxLength?: number
+  /**
+   * Section the field belongs to inside its half of the row. The combined edit
+   * dialog is generated from these maps, so a field is grouped, labelled and
+   * validated from one place and the form cannot drift from what the API takes.
+   */
+  group: string
+  /** Fixed choices. */
+  options?: readonly string[]
+  /** Choices loaded at runtime — see OptionSource. */
+  optionsFrom?: OptionSource
+  /** Renders as a textarea. */
+  multiline?: boolean
+  /**
+   * Set on a column that exists on *both* tables under one name, which the view
+   * therefore exposes only once. The edit form shows it once and writes it to
+   * both halves, so whichever copy the view reads back carries what was set and
+   * the two tables don't drift apart. (This is what PUT /api/orders/[id]
+   * already does for deposit.)
+   */
+  mirrored?: boolean
 }
 
-const text = (label: string, maxLength = 255): ProjectOrderFieldMeta => ({
+type Extra = Partial<Omit<ProjectOrderFieldMeta, "label" | "type" | "group">>
+
+const text = (label: string, group: string, extra: Extra = {}): ProjectOrderFieldMeta => ({
   label,
   type: "text",
-  maxLength,
+  maxLength: 255,
+  group,
+  ...extra,
 })
-const enumField = (label: string): ProjectOrderFieldMeta => ({ label, type: "enum", maxLength: 64 })
-const number = (label: string): ProjectOrderFieldMeta => ({ label, type: "number" })
-const integer = (label: string): ProjectOrderFieldMeta => ({ label, type: "integer" })
-const date = (label: string): ProjectOrderFieldMeta => ({ label, type: "date" })
+const enumField = (label: string, group: string, extra: Extra = {}): ProjectOrderFieldMeta => ({
+  label,
+  type: "enum",
+  maxLength: 64,
+  group,
+  ...extra,
+})
+const number = (label: string, group: string): ProjectOrderFieldMeta => ({
+  label,
+  type: "number",
+  group,
+})
+const integer = (label: string, group: string): ProjectOrderFieldMeta => ({
+  label,
+  type: "integer",
+  group,
+})
+const date = (label: string, group: string): ProjectOrderFieldMeta => ({
+  label,
+  type: "date",
+  group,
+})
+
+const YES_NO = ["Yes", "No"] as const
 
 /**
  * `projects` columns the shared view may write — the set the Projects edit
@@ -46,29 +98,40 @@ const date = (label: string): ProjectOrderFieldMeta => ({ label, type: "date" })
  * person_id) are absent because they are identity or derived, not editable.
  */
 export const PROJECT_ORDER_PROJECT_FIELDS: Record<string, ProjectOrderFieldMeta> = {
-  project_name: text("Project Name"),
-  project_manager: enumField("Project Manager"),
-  pm_type: enumField("PM Type"),
-  sales_person: enumField("Sales Person"),
-  project_type: enumField("Project Type"),
-  construction_type: enumField("Construction Type"),
-  property_type: enumField("Property Type"),
-  project_status: enumField("Project Status"),
-  deposit: enumField("Deposit"),
-  client_contact_name: text("Client Contact"),
-  company_email: text("Company Email"),
-  path_to_files: text("Path to Files", 2048),
-  email_id: integer("Email ID"),
-  client_id: integer("Client ID"),
+  project_name: text("Project Name", "Project"),
+  project_manager: enumField("Project Manager", "Project", {
+    optionsFrom: "enum:project_manager",
+  }),
+  sales_person: enumField("Sales Person", "Project", { optionsFrom: "enum:sales_person" }),
+  project_status: enumField("Project Status", "Project", {
+    optionsFrom: "enum:project_status_values",
+  }),
+  project_type: enumField("Project Type", "Project", { optionsFrom: "enum:project_type_values" }),
+  construction_type: enumField("Construction Type", "Project", {
+    optionsFrom: "enum:construction_type_values",
+  }),
+  property_type: enumField("Property Type", "Project", {
+    optionsFrom: "enum:property_type_values",
+  }),
+  client_contact_name: text("Client Contact", "Project"),
+  company_email: text("Company Email", "Project"),
+  email_id: integer("Email ID", "Project"),
+  client_id: integer("Client ID", "Project"),
+  path_to_files: text("Path to Files", "Project", { maxLength: 2048 }),
+  // On both tables under one name, so the view shows one of them — see
+  // `mirrored`.
+  pm_type: enumField("PM Type", "Project", { optionsFrom: "enum:pm_type", mirrored: true }),
+  deposit: enumField("Deposit", "Project", { options: YES_NO, mirrored: true }),
 
   // Invoicing — what this view exists to get done.
-  invoice_number: text("Invoice Number"),
-  invoice_date: date("Invoice Date"),
-  invoice_paid_date: date("Invoice Paid Date"),
-  partial_invoice: text("Partial Invoice"),
-  partial_invoice_paid_date: date("Partial Invoice Paid"),
-  order_confirmation_date: date("Order Confirmation Date"),
-  delivery_completion_date: date("Date First Delivery Complete"),
+  invoice_number: text("Invoice Number", "Invoicing"),
+  invoice_date: date("Invoice Date", "Invoicing"),
+  invoice_paid_date: date("Invoice Paid Date", "Invoicing"),
+  partial_invoice: text("Partial Invoice", "Invoicing"),
+  partial_invoice_paid_date: date("Partial Invoice Paid", "Invoicing"),
+
+  order_confirmation_date: date("Order Confirmation Date", "Project dates"),
+  delivery_completion_date: date("Date First Delivery Complete", "Project dates"),
 }
 
 /**
@@ -79,32 +142,62 @@ export const PROJECT_ORDER_PROJECT_FIELDS: Record<string, ProjectOrderFieldMeta>
  * by the half of the payload it arrives in, never by guessing.
  */
 export const PROJECT_ORDER_ORDER_FIELDS: Record<string, ProjectOrderFieldMeta> = {
-  product_name: text("Product Name"),
-  supplier: enumField("Supplier"),
-  order_type: enumField("Order Type"),
-  order_status: enumField("Order Status"),
-  pm_type: enumField("PM Type"),
-  supplier_payment: enumField("Supplier Payment"),
-  deposit: enumField("Deposit"),
-  comments: text("Comments", 5000),
+  product_name: enumField("Product Name", "Order", { optionsFrom: "product_codes" }),
+  order_type: enumField("Order Type", "Order", {
+    options: ["Standard", "Internal", "Free of Charge", "Express"],
+  }),
+  order_status: enumField("Order Status", "Order", { optionsFrom: "order_status" }),
+  supplier: enumField("Supplier", "Order", { optionsFrom: "suppliers" }),
+  supplier_payment: enumField("Supplier Payment", "Order", {
+    options: ["Yes", "No", "Pending"],
+  }),
+  quantity: integer("Quantity", "Order"),
+  unit_price: number("Unit Price", "Order"),
+  cost: number("Cost", "Order"),
+  discount: number("Discount", "Order"),
+  comments: text("Comments", "Order", { maxLength: 5000, multiline: true }),
+  // The order's own copies of two columns the projects table also has; the form
+  // shows them once, under Project — see `mirrored` there.
+  pm_type: enumField("PM Type", "Order", { optionsFrom: "enum:pm_type" }),
+  deposit: enumField("Deposit", "Order", { options: YES_NO }),
 
-  quantity: integer("Quantity"),
-  cost: number("Cost"),
-  unit_price: number("Unit Price"),
-  discount: number("Discount"),
-  delay_first_delivery: integer("Delay 1st Delivery"),
-  delay_first_revision: integer("Delay 1st Revision"),
-  delay_second_revision: integer("Delay 2nd Revision"),
+  date_information_complete: date("Date Info Complete", "Order dates"),
+  due_delivery_date: date("Due Delivery Date", "Order dates"),
+  delivery_1_date: date("Delivery 1", "Order dates"),
+  delivery_2_date: date("Delivery 2", "Order dates"),
+  delivery_3_date: date("Delivery 3", "Order dates"),
+  delivery_4_date: date("Delivery 4", "Order dates"),
+  date_first_delivery_complete: date("Date First Delivery Complete", "Order dates"),
+  project_completion_date: date("Date Project End", "Order dates"),
 
-  date_information_complete: date("Date Info Complete"),
-  due_delivery_date: date("Due Delivery Date"),
-  delivery_1_date: date("delivery_1"),
-  delivery_2_date: date("delivery_2"),
-  delivery_3_date: date("delivery_3"),
-  delivery_4_date: date("delivery_4"),
-  date_first_delivery_complete: date("Date First Delivery Complete"),
-  project_completion_date: date("Date Project End"),
+  delay_first_delivery: integer("Delay 1st Delivery (hours)", "Delays"),
+  delay_first_revision: integer("Delay 1st Revision (hours)", "Delays"),
+  delay_second_revision: integer("Delay 2nd Revision (hours)", "Delays"),
 }
+
+/**
+ * Fields shown once but written to both halves — the columns that exist on both
+ * tables under one name, which the view can therefore expose only once.
+ */
+export const MIRRORED_FIELDS = Object.entries(PROJECT_ORDER_PROJECT_FIELDS)
+  .filter(([key, meta]) => meta.mirrored && key in PROJECT_ORDER_ORDER_FIELDS)
+  .map(([key]) => key)
+
+/** The section names of one half, in the order the form should render them. */
+export const groupsOf = (fields: Record<string, ProjectOrderFieldMeta>): string[] => {
+  const groups: string[] = []
+  for (const meta of Object.values(fields)) {
+    if (!groups.includes(meta.group)) groups.push(meta.group)
+  }
+  return groups
+}
+
+/** The fields of one section, in declaration order. */
+export const fieldsInGroup = (
+  fields: Record<string, ProjectOrderFieldMeta>,
+  group: string
+): [string, ProjectOrderFieldMeta][] =>
+  Object.entries(fields).filter(([, meta]) => meta.group === group)
 
 /**
  * Columns typed straight into the table body, without opening a dialog. A

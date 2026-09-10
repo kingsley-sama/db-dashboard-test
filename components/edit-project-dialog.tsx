@@ -3,7 +3,6 @@
 import type React from "react"
 
 import { useState, useEffect, useRef } from "react"
-import type { ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -23,25 +22,10 @@ export function EditProjectDialog({
   project,
   onClose,
   onUpdate,
-  showIntakePanel = true,
-  contextBanner,
 }: {
   project: any
   onClose: () => void
   onUpdate: (project: any) => Promise<{ success: boolean; error?: string }>
-  /**
-   * Shown above the form, naming the record being edited. Set where the dialog
-   * is opened from a view whose rows carry more than one record (the Project
-   * Orders shared view), so it is never a question which one this form saves.
-   */
-  contextBanner?: ReactNode
-  /**
-   * The questionnaire handover, which starts the intake automation when it
-   * flips to 'Yes'. Left out where this dialog is reused outside the Projects
-   * module (the Project Orders shared view), so an invoicing edit can never
-   * kick off intake as a side effect.
-   */
-  showIntakePanel?: boolean
 }) {
   const [formData, setFormData] = useState({
     ...project,
@@ -324,7 +308,6 @@ export function EditProjectDialog({
           </div>
         </CardHeader>
         <CardContent>
-          {contextBanner}
           {error && (
             <Alert variant="destructive" className="mb-4">
               <AlertCircle className="h-4 w-4" />
@@ -442,16 +425,13 @@ export function EditProjectDialog({
               {renderEnumSelect("project_status", "Project Status", "project_status_values")}
               {renderEnumSelect("deposit", "Deposit", "yes_no_values")}
               {renderEnumSelect("first_or_next_project", "First/Next Project", "first_next_project")}
-
-              {showIntakePanel && (
-                <ProjectIntakePanel
-                  projectId={project.id}
-                  initialQuestionnaireReceived={project.questionnaire_received}
-                  onChange={(value) =>
-                    setFormData((prev: any) => ({ ...prev, questionnaire_received: value }))
-                  }
-                />
-              )}
+              <ProjectIntakePanel
+                projectId={project.id}
+                initialQuestionnaireReceived={project.questionnaire_received}
+                onChange={(value) =>
+                  setFormData((prev: any) => ({ ...prev, questionnaire_received: value }))
+                }
+              />
               <div>
                 <label className="text-sm font-medium" style={{ color: '#012e64' }}>Path to Files</label>
                 <Input name="path_to_files" value={formData.path_to_files || ""} onChange={handleChange} className="bg-white" style={{ borderColor: '#8d9499', color: '#012e64' }} />
