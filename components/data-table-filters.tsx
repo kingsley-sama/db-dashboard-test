@@ -128,7 +128,13 @@ const useDismissOnOutside = (
   open: boolean,
   setOpen: (open: boolean) => void,
   refs: RefObject<HTMLElement | null>[],
-  reposition?: () => boolean
+  reposition?: () => boolean,
+  /**
+   * Escape, where it should mean something other than "close". A panel that
+   * holds an unapplied draft uses it to back out without keeping the draft;
+   * without this, Escape and clicking away would both commit.
+   */
+  onEscape?: () => void
 ) => {
   useEffect(() => {
     if (!open) return
@@ -138,7 +144,9 @@ const useDismissOnOutside = (
     }
     const close = () => setOpen(false)
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close()
+      if (e.key !== "Escape") return
+      if (onEscape) onEscape()
+      else close()
     }
     const onScroll = (e: Event) => {
       if (insideAny(e.target as Node)) return
@@ -452,6 +460,44 @@ const calendarTheme = {
   "--accent-foreground": "213 98% 20%",
 } as CSSProperties
 
+/**
+ * A day, drawn as a labelled box.
+ *
+ * Two of these side by side are what make it obvious the filter takes a range:
+ * the empty End box asks to be filled, and the one being picked next is ringed,
+ * so the panel says "two dates" before the user has clicked anything.
+ */
+function DayBox({
+  label,
+  value,
+  active,
+  placeholder,
+}: {
+  label: string
+  value: Date | null
+  active: boolean
+  placeholder: string
+}) {
+  return (
+    <div className="flex-1 min-w-0">
+      <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "#8d9499" }}>
+        {label}
+      </div>
+      <div
+        className="mt-0.5 px-2 py-1 rounded text-xs truncate"
+        style={{
+          border: `1px solid ${active ? "#012e64" : "#cbd5e1"}`,
+          boxShadow: active ? "0 0 0 2px rgba(1, 46, 100, 0.12)" : undefined,
+          color: value ? "#012e64" : "#8d9499",
+          backgroundColor: "#ffffff",
+        }}
+      >
+        {value ? formatDate(value) : placeholder}
+      </div>
+    </div>
+  )
+}
+
 export function DateRangeFilter({
   filter,
   onChange,
@@ -471,7 +517,28 @@ export function DateRangeFilter({
   const width = singleDay ? SINGLE_PANEL_WIDTH : PANEL_WIDTH
 
   const { from, to } = parseDateRange(filter.text)
-  const selected: DateRange | undefined = from || to ? { from: from ?? undefined, to: to ?? undefined } : undefined
+  const selected: DateRange | undefined =
+    from || to ? { from: from ?? undefined, to: to ?? undefined } : undefined
+
+  /**
+   * What is picked in the panel but not yet filtering.
+   *
+   * Picking the first day of a range used to apply straight away, so the table
+   * re-queried and jumped to "everything from that day on" while the user was
+   * still reaching for the second day. Nothing leaves this panel until the
+   * range is applied — by the Apply button, or by clicking away.
+   */
+  const [draft, setDraft] = useState<DateRange | undefined>(selected)
+  const draftFrom = draft?.from ?? null
+  const draftTo = draft?.to ?? null
+  // Which end the next click sets. react-day-picker answers the first click of
+  // a range with both ends on the same day, so "the two ends are the same day"
+  // is what a half-picked range looks like — and also what a deliberate
+  // one-day choice looks like, which is why the hint offers both.
+  const halfPicked = Boolean(
+    draftFrom && draftTo && startOfDay(draftFrom) === startOfDay(draftTo)
+  )
+  const picking: "start" | "end" = draftFrom && (!draftTo || halfPicked) ? "end" : "start"
 
   const place = () => {
     const r = btnRef.current?.getBoundingClientRect()
@@ -479,29 +546,55 @@ export function DateRangeFilter({
     // Keep the panel on screen: flip above when it would run off the bottom,
     // and pull it left when it would run off the right edge.
     const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8))
-    const estHeight = 360
-    const top = r.bottom + estHeight > window.innerHeight - 8 ? Math.max(8, r.top - estHeight - 4) : r.bottom + 4
+    const estHeight = singleDay ? 380 : 430
+    const top =
+      r.bottom + estHeight > window.innerHeight - 8
+        ? Math.max(8, r.top - estHeight - 4)
+        : r.bottom + 4
     setPos({ top, left })
     return true
   }
 
-  useDismissOnOutside(open, setOpen, [panelRef, btnRef], place)
+  const commitRange = (fromDay: Date | null, toDay: Date | null) =>
+    // One day picked is one day meant: the end fills itself in, so the filter
+    // reads "is on that day" rather than "from that day onwards" — which is
+    // what the "is after" operator is for.
+    onChange(buildDateFilter(serializeRange(fromDay, toDay ?? fromDay), op))
 
-  const toggleOpen = () => {
-    if (!open) place()
-    setOpen((o) => !o)
+  const applyAndClose = () => {
+    commitRange(draftFrom, draftTo)
+    setOpen(false)
   }
 
-  const commit = (range: DateRange | undefined) =>
-    onChange(buildDateFilter(serializeRange(range?.from ?? null, range?.to ?? null), op))
+  const cancelAndClose = () => {
+    setDraft(selected)
+    setOpen(false)
+  }
 
-  const commitDay = (day: Date | undefined) =>
-    onChange(buildDateFilter(day ? formatDate(day) : "", op))
+  useDismissOnOutside(
+    open,
+    (next) => {
+      if (!next) applyAndClose()
+    },
+    [panelRef, btnRef],
+    place,
+    cancelAndClose
+  )
+
+  const toggleOpen = () => {
+    if (open) {
+      applyAndClose()
+      return
+    }
+    setDraft(selected)
+    place()
+    setOpen(true)
+  }
 
   const label = !from && !to
     ? singleDay
       ? "Pick a date"
-      : "All dates"
+      : "Date or range…"
     : singleDay
     ? formatDate((from ?? to)!)
     : from && to && startOfDay(from) === startOfDay(to)
@@ -518,7 +611,11 @@ export function DateRangeFilter({
         onClick={toggleOpen}
         className={`${inputClass} flex items-center gap-1.5 text-left`}
         style={{ ...inputStyle, color: from || to ? "#012e64" : "#8d9499" }}
-        title={singleDay ? "Pick the date to compare against" : "Pick a single date or a date range"}
+        title={
+          singleDay
+            ? "Pick the date to compare against"
+            : "Pick one day for a single date, or two for a range"
+        }
       >
         <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: "#8d9499" }} />
         <span className="truncate flex-1">{label}</span>
@@ -544,8 +641,10 @@ export function DateRangeFilter({
                     key={p.label}
                     type="button"
                     onClick={() => {
+                      // A preset is a whole range, so it applies at once.
                       const r = p.range(today)
-                      commit(r)
+                      setDraft(r)
+                      commitRange(r.from, r.to)
                       setOpen(false)
                     }}
                     className="px-3 py-1.5 text-left text-xs hover:bg-blue-50"
@@ -557,61 +656,105 @@ export function DateRangeFilter({
               </div>
             )}
             <div className="flex-1 min-w-0 flex flex-col">
+              {/* The two ends of the range, before the calendar — so the panel
+                  shows what it is asking for rather than leaving it to be
+                  discovered by clicking twice. */}
+              <div
+                className="flex items-end gap-2 px-3 pt-3 pb-2"
+                style={{ borderBottom: "1px solid #e2e8f0" }}
+              >
+                {singleDay ? (
+                  <DayBox
+                    label={operatorMeta("date", op).label}
+                    value={draftFrom ?? draftTo}
+                    active
+                    placeholder="Pick a day"
+                  />
+                ) : (
+                  <>
+                    <DayBox
+                      label="Start"
+                      value={draftFrom}
+                      active={picking === "start"}
+                      placeholder="Pick a day"
+                    />
+                    <span className="pb-1.5 text-xs" style={{ color: "#8d9499" }}>
+                      –
+                    </span>
+                    <DayBox
+                      label="End"
+                      value={draftTo}
+                      active={picking === "end"}
+                      placeholder="Same day"
+                    />
+                  </>
+                )}
+              </div>
               <div style={calendarTheme}>
                 {singleDay ? (
                   <Calendar
                     mode="single"
-                    selected={from ?? to ?? undefined}
-                    defaultMonth={from ?? to ?? today}
+                    selected={draftFrom ?? draftTo ?? undefined}
+                    defaultMonth={draftFrom ?? draftTo ?? today}
                     numberOfMonths={1}
                     captionLayout="dropdown"
                     startMonth={new Date(2015, 0)}
                     endMonth={new Date(today.getFullYear() + 2, 11)}
-                    onSelect={(day) => commitDay(day ?? undefined)}
+                    onSelect={(day) => {
+                      // One click is the whole choice here.
+                      onChange(buildDateFilter(day ? formatDate(day) : "", op))
+                      setDraft(day ? { from: day, to: day } : undefined)
+                      setOpen(false)
+                    }}
                     className="p-3"
                   />
                 ) : (
                   <Calendar
                     mode="range"
-                    selected={selected}
-                    defaultMonth={from ?? to ?? today}
+                    selected={draft}
+                    defaultMonth={draftFrom ?? draftTo ?? today}
                     numberOfMonths={1}
                     captionLayout="dropdown"
                     startMonth={new Date(2015, 0)}
                     endMonth={new Date(today.getFullYear() + 2, 11)}
-                    onSelect={(range) => commit(range)}
+                    onSelect={(range) => setDraft(range)}
                     className="p-3"
                   />
                 )}
               </div>
-              <div
-                className="flex items-center justify-between gap-2 px-3 py-2"
-                style={{ borderTop: "1px solid #e2e8f0" }}
-              >
-                <span className="text-xs truncate" style={{ color: from || to ? "#012e64" : "#8d9499" }}>
-                  {from || to
-                    ? `${operatorMeta("date", op).phrase} ${label}`
-                    : singleDay
+              {/* The hint gets its own line: sharing one with the buttons
+                  truncated it to nothing in a panel this narrow. */}
+              <div style={{ borderTop: "1px solid #e2e8f0" }}>
+                <div className="px-3 pt-2 text-xs" style={{ color: "#5d6b88" }}>
+                  {singleDay
                     ? "Click the day to compare against"
-                    : "Click a day, then a second day for a range"}
-                </span>
-                <div className="flex items-center gap-1.5 shrink-0">
+                    : picking === "end"
+                    ? "Now click the end day — or Apply for that one day"
+                    : "Click a day, then another one for a range"}
+                </div>
+                <div className="flex items-center justify-end gap-1.5 px-3 pb-2 pt-1.5">
                   <button
                     type="button"
-                    onClick={() => onChange(buildDateFilter("", op))}
+                    onClick={() => {
+                      setDraft(undefined)
+                      onChange(buildDateFilter("", op))
+                      setOpen(false)
+                    }}
                     className="px-2 py-1 rounded text-xs hover:bg-blue-50"
                     style={{ color: "#8d9499", border: "1px solid #cbd5e1" }}
                   >
                     Clear
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setOpen(false)}
-                    className="px-2.5 py-1 rounded text-xs text-white"
-                    style={{ backgroundColor: "#012e64" }}
-                  >
-                    Done
-                  </button>
+                  {!singleDay && (
+                    <button
+                      type="button"
+                      onClick={applyAndClose}
+                      className="px-2.5 py-1 rounded text-xs text-white"
+                      style={{ backgroundColor: "#012e64" }}
+                    >
+                      Apply
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
