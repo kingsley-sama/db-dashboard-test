@@ -36,6 +36,11 @@ async function loadProject(id: string) {
 // Fields the intake workflow actually consumes. A missing value here is a real
 // problem, not a style issue — these are the inputs to the webhook payload
 // built by trg_projects_questionnaire_received_fn().
+//
+// They arrive already resolved: project_intake_queue_view coalesces the
+// project's proposal over the project itself for all three, exactly as the
+// trigger does when it builds the payload. So "missing" here means missing from
+// both, which is what the warnings say.
 function buildWarnings(project: any) {
   const warnings: { field: string; message: string; blocking: boolean }[] = [];
 
@@ -43,7 +48,7 @@ function buildWarnings(project: any) {
     warnings.push({
       field: 'company_email',
       message:
-        'No company email on the project. Intake fetches the client email thread by sender address and will find nothing to work from.',
+        'No company email on the proposal or the project. Intake fetches the client email thread by sender address and will find nothing to work from.',
       blocking: true
     });
   }
@@ -52,7 +57,7 @@ function buildWarnings(project: any) {
     warnings.push({
       field: 'order_confirmation_date',
       message:
-        'No order confirmation date. It is sent as the email search start date; without it the mailbox query is malformed and intake fails.',
+        'No proposal date on the proposal, and no order confirmation date on the project. One of them is sent as the email search start date; without it the mailbox query is malformed and intake fails.',
       blocking: true
     });
   }
@@ -61,7 +66,7 @@ function buildWarnings(project: any) {
     warnings.push({
       field: 'path_to_files',
       message:
-        'No path to files. The brief and ClickUp task are still created, but no project files are attached to them.',
+        'No path to files on the proposal or the project. The brief and ClickUp task are still created, but no project files are attached to them.',
       blocking: false
     });
   }
