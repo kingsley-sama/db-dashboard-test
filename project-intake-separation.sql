@@ -79,9 +79,8 @@ SECURITY DEFINER
 SET search_path = public, net
 AS $function$
 DECLARE
-  -- Same endpoint and payload the old on_new_row trigger used, so the
-  -- new-row-webhook edge function and the n8n intake workflow are unchanged.
-  v_url text := 'https://butloczcoaudnwwkdkib.supabase.co/functions/v1/new-row-webhook';
+  v_url text := 'https://n8n.exposeprofi.de/webhook/b7c1f402-intake-v2-0000-000000000001';
+  v_proposal record;
 BEGIN
   -- Only a real transition into 'Yes' starts intake. An UPDATE that merely
   -- mentions the column, or that changes unrelated project fields while
@@ -103,14 +102,24 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  -- Proposal values take precedence, with a project-field fallback for every
+  -- input so a partial proposal still produces a usable webhook payload.
+  SELECT pr.company_email AS email_address,
+         pr.proposal_date AS start_date,
+         pr.path_to_files
+    INTO v_proposal
+  FROM public.proposals pr
+  WHERE pr.project_id = NEW.project_id
+  LIMIT 1;
+
   PERFORM net.http_post(
     url     := v_url,
     headers := jsonb_build_object('Content-Type', 'application/json'),
     body    := jsonb_build_object(
-      'email_address', NEW.company_email,
-      'start_date',    NEW.order_confirmation_date,
+      'email_address', COALESCE(v_proposal.email_address, NEW.company_email),
+      'start_date',    COALESCE(v_proposal.start_date, NEW.order_confirmation_date),
       'project_id',    NEW.project_id,
-      'path_to_files', NEW.path_to_files
+      'path_to_files', COALESCE(v_proposal.path_to_files, NEW.path_to_files)
     )
   );
 
@@ -310,7 +319,8 @@ SET search_path = public, net
 AS $function$
 DECLARE
   v_project public.projects%ROWTYPE;
-  v_url text := 'https://butloczcoaudnwwkdkib.supabase.co/functions/v1/new-row-webhook';
+  v_proposal record;
+  v_url text := 'https://n8n.exposeprofi.de/webhook/b7c1f402-intake-v2-0000-000000000001';
 BEGIN
   UPDATE public.project_intake_runs
      SET status = 'processing', attempts = attempts + 1, triggered_at = now()
@@ -323,14 +333,22 @@ BEGIN
 
   SELECT * INTO v_project FROM public.projects WHERE project_id = p_project_id;
 
+  SELECT pr.company_email AS email_address,
+         pr.proposal_date AS start_date,
+         pr.path_to_files
+    INTO v_proposal
+  FROM public.proposals pr
+  WHERE pr.project_id = p_project_id
+  LIMIT 1;
+
   PERFORM net.http_post(
     url     := v_url,
     headers := jsonb_build_object('Content-Type', 'application/json'),
     body    := jsonb_build_object(
-      'email_address', v_project.company_email,
-      'start_date',    v_project.order_confirmation_date,
+      'email_address', COALESCE(v_proposal.email_address, v_project.company_email),
+      'start_date',    COALESCE(v_proposal.start_date, v_project.order_confirmation_date),
       'project_id',    v_project.project_id,
-      'path_to_files', v_project.path_to_files
+      'path_to_files', COALESCE(v_proposal.path_to_files, v_project.path_to_files)
     )
   );
 
@@ -356,7 +374,8 @@ SET search_path = public, net
 AS $function$
 DECLARE
   v_project public.projects%ROWTYPE;
-  v_url text := 'https://butloczcoaudnwwkdkib.supabase.co/functions/v1/new-row-webhook';
+  v_proposal record;
+  v_url text := 'https://n8n.exposeprofi.de/webhook/b7c1f402-intake-v2-0000-000000000001';
 BEGIN
   SELECT * INTO v_project FROM public.projects WHERE project_id = p_project_id;
   IF NOT FOUND THEN
@@ -366,6 +385,14 @@ BEGIN
   IF v_project.questionnaire_received IS DISTINCT FROM 'Yes'::public.yes_no_values THEN
     RETURN false;
   END IF;
+
+  SELECT pr.company_email AS email_address,
+         pr.proposal_date AS start_date,
+         pr.path_to_files
+    INTO v_proposal
+  FROM public.proposals pr
+  WHERE pr.project_id = p_project_id
+  LIMIT 1;
 
   INSERT INTO public.project_intake_runs (project_id, status, triggered_at)
   VALUES (p_project_id, 'processing', now())
@@ -379,10 +406,10 @@ BEGIN
     url     := v_url,
     headers := jsonb_build_object('Content-Type', 'application/json'),
     body    := jsonb_build_object(
-      'email_address', v_project.company_email,
-      'start_date',    v_project.order_confirmation_date,
+      'email_address', COALESCE(v_proposal.email_address, v_project.company_email),
+      'start_date',    COALESCE(v_proposal.start_date, v_project.order_confirmation_date),
       'project_id',    v_project.project_id,
-      'path_to_files', v_project.path_to_files
+      'path_to_files', COALESCE(v_proposal.path_to_files, v_project.path_to_files)
     )
   );
 
