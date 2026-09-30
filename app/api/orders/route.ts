@@ -14,6 +14,7 @@ import {
   runListQuery,
   type CountOptions,
 } from '@/lib/list-query';
+import { ORDERS_SORT_COLUMNS, applySort, parseSort } from '@/lib/table-sort';
 
 // Text columns the search box matches against.
 const SEARCH_COLUMNS = [
@@ -44,6 +45,8 @@ export async function GET(request: NextRequest) {
     const filterPmType = searchParams.get('filterPmType') || '';
     // Order status drill-down from the dashboard tiles / toolbar dropdown.
     const filterStatus = searchParams.get('status') || '';
+    // Column sort from the header menus. Unknown columns fall back to the default.
+    const sort = parseSort(searchParams, ORDERS_SORT_COLUMNS);
     // Per-column header filters. Unknown columns are dropped by the whitelist.
     const columnFilters = parseColumnFilters(
       searchParams.get('columnFilters'),
@@ -106,7 +109,12 @@ export async function GET(request: NextRequest) {
       offset,
       countOnly,
       buildQuery,
-      order: (query) => query.order('created_at', { ascending: false }),
+      // The chosen column first, then newest first, then the key as a
+      // tie-breaker so equal values keep one order across pages.
+      order: (query) =>
+        applySort(query, sort, ORDERS_SORT_COLUMNS, (q) =>
+          q.order('created_at', { ascending: false }).order('id', { ascending: true })
+        ),
     });
 
     if (!result.ok) {

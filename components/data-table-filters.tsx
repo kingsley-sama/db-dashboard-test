@@ -1,13 +1,21 @@
 "use client"
 
-import { CalendarDays, ChevronDown, X } from "lucide-react"
+import { ArrowDown, ArrowUp, ArrowUpDown, CalendarDays, Check, ChevronDown, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
-import type { RefObject } from "react"
+import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react"
 import { createPortal } from "react-dom"
 import type { CSSProperties } from "react"
 import type { DateRange } from "react-day-picker"
 
 import { Calendar } from "@/components/ui/calendar"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import type { SortDir, TableSort } from "@/lib/table-sort"
 
 // ---------------------------------------------------------------------------
 // Shared per-column filter primitives used by the orders and projects tables.
@@ -39,7 +47,9 @@ import {
   operatorMeta,
   parseDateRange,
   parseNumeric,
+  pinFilterValue,
   startOfDay,
+  unpinFilterValue,
   withOp,
   type ColumnFilter,
   type DateOp,
@@ -380,24 +390,79 @@ export function MultiSelectFilter({
   )
 }
 
-function NumericValueInput({
+/**
+ * The typed half of a text or numeric filter, holding any number of values.
+ *
+ * What is in the box filters as it is typed, as it always has. Enter pins it as
+ * a chip under the box and empties the box for the next value, so a list of
+ * project IDs can be built up one at a time — each chip stays in force until
+ * its × is clicked (or Backspace is pressed in the empty box). The operator
+ * decides how the values combine; see filterTerms.
+ */
+function MultiValueInput({
   filter,
   onChange,
+  placeholder,
+  title,
+  numeric = false,
 }: {
-  filter: Extract<ColumnFilter, { kind: "numeric" }>
+  filter: Extract<ColumnFilter, { kind: "text" | "numeric" }>
   onChange: (filter: ColumnFilter) => void
+  placeholder: string
+  title: string
+  numeric?: boolean
 }) {
+  const pinned = filter.values ?? []
+
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault()
+      const next = pinFilterValue(filter)
+      if (next !== filter) onChange(next)
+    } else if (e.key === "Backspace" && filter.value === "" && pinned.length > 0) {
+      e.preventDefault()
+      onChange(unpinFilterValue(filter, pinned[pinned.length - 1]))
+    }
+  }
+
   return (
-    <input
-      type="text"
-      inputMode="decimal"
-      value={filter.value}
-      onChange={(e) => onChange({ ...filter, value: e.target.value })}
-      placeholder="0"
-      title="Value to compare against"
-      className={inputClass}
-      style={inputStyle}
-    />
+    <div className="flex-1 min-w-0 flex flex-col gap-1">
+      <input
+        type="text"
+        inputMode={numeric ? "decimal" : undefined}
+        value={filter.value}
+        onChange={(e) => onChange({ ...filter, value: e.target.value })}
+        onKeyDown={onKeyDown}
+        placeholder={pinned.length ? "Add another…" : placeholder}
+        title={`${title} — press Enter to keep this value and add another`}
+        className={inputClass}
+        style={inputStyle}
+      />
+      {pinned.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {pinned.map((value) => (
+            <span
+              key={value}
+              className="inline-flex items-center gap-0.5 max-w-full rounded pl-1.5 pr-0.5 text-[11px] leading-5"
+              style={{ backgroundColor: "#e8f1fd", border: "1px solid #b9d6f7", color: "#012e64" }}
+              title={value}
+            >
+              <span className="truncate">{value}</span>
+              <button
+                type="button"
+                onClick={() => onChange(unpinFilterValue(filter, value))}
+                aria-label={`Remove ${value} from this filter`}
+                title={`Remove ${value}`}
+                className="inline-flex items-center justify-center h-3.5 w-3.5 shrink-0 rounded hover:bg-blue-100"
+                style={{ color: "#5d6b88" }}
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -638,6 +703,7 @@ export function ColumnFilterControl({
   options = [],
   onOpenOptions,
   filterable = true,
+  prefixOptions,
 }: {
   filter: ColumnFilter
   onChange: (filter: ColumnFilter) => void
@@ -645,6 +711,8 @@ export function ColumnFilterControl({
   options?: string[]
   onOpenOptions?: () => void
   filterable?: boolean
+  /** First-letter quick picks, for a text column that offers them. */
+  prefixOptions?: { value: string; label: string }[]
 }) {
   if (!filterable) {
     return (
@@ -663,6 +731,23 @@ export function ColumnFilterControl({
 
   const op = filterOp(filter)
   const meta = operatorMeta(filter.kind, op)
+
+  if (filter.kind === "text" && prefixOptions?.length && meta.needsValue) {
+    return (
+      <div className="flex flex-col gap-1">
+        <PrefixPicker filter={filter} options={prefixOptions} onChange={onChange} label={label} />
+        <div className="flex items-start gap-1">
+          <FilterOperatorSelect filter={filter} onChange={onChange} label={label} />
+          <MultiValueInput
+            filter={filter}
+            onChange={onChange}
+            placeholder={op === "contains" || op === "not_contains" ? "Contains…" : "Exact value…"}
+            title={`Filter: ${meta.label.toLowerCase()}`}
+          />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex items-center gap-1">
@@ -687,21 +772,180 @@ export function ColumnFilterControl({
           onOpen={onOpenOptions}
         />
       ) : filter.kind === "numeric" ? (
-        <NumericValueInput filter={filter} onChange={onChange} />
+        <MultiValueInput
+          filter={filter}
+          onChange={onChange}
+          placeholder="0"
+          title="Value to compare against"
+          numeric
+        />
       ) : filter.kind === "date" ? (
         <DateRangeFilter filter={filter} onChange={onChange} />
       ) : (
-        <input
-          type="text"
-          value={filter.value}
-          onChange={(e) => onChange({ ...filter, value: e.target.value })}
+        <MultiValueInput
+          filter={filter}
+          onChange={onChange}
           placeholder={op === "contains" || op === "not_contains" ? "Contains…" : "Exact value…"}
           title={`Filter: ${meta.label.toLowerCase()}`}
-          className={inputClass}
-          style={inputStyle}
         />
       )}
     </div>
+  )
+}
+
+/**
+ * "Starts with" toggles for a column coded by its first letter. Any number can
+ * be on; with none on, the column isn't narrowed by them. They combine with the
+ * search box below, so "N" plus "Gratis" finds the free ones.
+ */
+function PrefixPicker({
+  filter,
+  options,
+  onChange,
+  label,
+}: {
+  filter: Extract<ColumnFilter, { kind: "text" }>
+  options: { value: string; label: string }[]
+  onChange: (filter: ColumnFilter) => void
+  label?: string
+}) {
+  const picked = filter.prefixes ?? []
+  const toggle = (value: string) => {
+    const next = picked.includes(value) ? picked.filter((p) => p !== value) : [...picked, value]
+    onChange({ ...filter, prefixes: next })
+  }
+  return (
+    <div className="flex items-center gap-1 text-[11px]" style={{ color: "#5d6b88" }}>
+      <span className="shrink-0">Starts with</span>
+      {options.map((option) => {
+        const on = picked.includes(option.value)
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => toggle(option.value)}
+            aria-pressed={on}
+            title={`${on ? "Stop showing" : "Show"} ${label ?? "rows"} starting with ${option.value}`}
+            className="min-w-[26px] h-[22px] px-1.5 rounded font-semibold"
+            style={{
+              border: `1px solid ${on ? "#012e64" : "#cbd5e1"}`,
+              backgroundColor: on ? "#012e64" : "#ffffff",
+              color: on ? "#ffffff" : "#012e64",
+            }}
+          >
+            {option.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// --- Column sort -------------------------------------------------------------
+
+const SORT_WORDS: Record<FilterKind, Record<SortDir, string>> = {
+  text: { asc: "A → Z", desc: "Z → A" },
+  multi: { asc: "A → Z", desc: "Z → A" },
+  numeric: { asc: "Smallest → largest", desc: "Largest → smallest" },
+  date: { asc: "Oldest → newest", desc: "Newest → oldest" },
+}
+
+/**
+ * The sort dropdown beside a column's name. It orders the whole table on the
+ * server, not only the page on screen, and one column is sorted at a time —
+ * choosing another replaces it. Empty cells go last either way.
+ *
+ * `sortable: false` is for a column the API has nothing to order by; the
+ * button is shown disabled so every header keeps the same shape.
+ */
+export function ColumnSortMenu({
+  columnKey,
+  label,
+  kind,
+  sort,
+  onSortChange,
+  sortable = true,
+}: {
+  columnKey: string
+  label: string
+  kind: FilterKind
+  sort: TableSort | null
+  onSortChange: (sort: TableSort | null) => void
+  sortable?: boolean
+}) {
+  const active = sort?.key === columnKey ? sort.dir : null
+  const words = SORT_WORDS[kind] ?? SORT_WORDS.text
+  const Icon = active === "asc" ? ArrowUp : active === "desc" ? ArrowDown : ArrowUpDown
+
+  if (!sortable) {
+    return (
+      <button
+        type="button"
+        disabled
+        title={`${label} can't be sorted`}
+        aria-label={`${label} can't be sorted`}
+        className="inline-flex items-center justify-center h-6 w-6 rounded cursor-not-allowed opacity-40"
+        style={{ color: "#8d9499" }}
+      >
+        <ArrowUpDown className="w-3.5 h-3.5" />
+      </button>
+    )
+  }
+
+  const item = (dir: SortDir) => (
+    <DropdownMenuItem
+      onClick={() => onSortChange({ key: columnKey, dir })}
+      className="cursor-pointer text-sm"
+      style={{ color: "#012e64" }}
+    >
+      {dir === "asc" ? <ArrowUp className="w-3.5 h-3.5" /> : <ArrowDown className="w-3.5 h-3.5" />}
+      {dir === "asc" ? "Ascending" : "Descending"}
+      <span className="text-xs" style={{ color: "#8d9499" }}>
+        {words[dir]}
+      </span>
+      {active === dir && <Check className="w-3.5 h-3.5 ml-auto" />}
+    </DropdownMenuItem>
+  )
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          title={
+            active
+              ? `${label}: sorted ${active === "asc" ? "ascending" : "descending"} (${words[active]}) — click to change`
+              : `Sort by ${label}`
+          }
+          aria-label={`Sort by ${label}`}
+          className="inline-flex items-center justify-center gap-0.5 h-6 px-1 rounded hover:bg-blue-100 focus:outline-none focus-visible:ring-2"
+          style={{
+            color: active ? "#012e64" : "#8d9499",
+            backgroundColor: active ? "#e8f1fd" : undefined,
+          }}
+        >
+          <Icon className="w-3.5 h-3.5" />
+          <ChevronDown className="w-2.5 h-2.5 opacity-70" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-[13rem]">
+        {item("asc")}
+        {item("desc")}
+        {active && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => onSortChange(null)}
+              className="cursor-pointer text-sm"
+              style={{ color: "#5d6b88" }}
+            >
+              <X className="w-3.5 h-3.5" />
+              Clear sort
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 

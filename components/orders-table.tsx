@@ -36,6 +36,13 @@ import {
   type ColumnFilter,
   type ColumnFilterMap,
 } from "@/lib/column-filters"
+import {
+  ALL_ORDERS_SORT_COLUMNS,
+  ORDERS_SORT_COLUMNS,
+  PROJECT_ORDERS_SORT_COLUMNS,
+  appendSortParams,
+  type SortColumnMap,
+} from "@/lib/table-sort"
 import { OrdersDataTable, type DisplayField, type RowAction } from "@/components/orders-data-table"
 import { CreateOrderDialog } from "@/components/create-order-dialog"
 import { EditOrderDialog } from "@/components/edit-order-dialog"
@@ -54,6 +61,13 @@ const FILTERABLE_BY_API: Record<string, ColumnFilterMap> = {
   "/api/orders": ORDERS_FILTER_COLUMNS,
   "/api/all-orders": ALL_ORDERS_FILTER_COLUMNS,
   "/api/project-orders": PROJECT_ORDERS_FILTER_COLUMNS,
+}
+
+/** Which columns each endpoint will order by — the sort menu's whitelist. */
+const SORTABLE_BY_API: Record<string, SortColumnMap> = {
+  "/api/orders": ORDERS_SORT_COLUMNS,
+  "/api/all-orders": ALL_ORDERS_SORT_COLUMNS,
+  "/api/project-orders": PROJECT_ORDERS_SORT_COLUMNS,
 }
 
 /**
@@ -166,6 +180,8 @@ export function OrdersTable({
     setStatusFilter: setPersistedStatus,
     columnFilters,
     setColumnFilters,
+    sort,
+    setSort,
     currentPage,
     setCurrentPage,
     ready,
@@ -217,6 +233,19 @@ export function OrdersTable({
     return meta ? new Set(Object.keys(meta)) : undefined
   }, [apiPath])
 
+  // Quick picks come from the same whitelist the route checks them against.
+  const prefixOptions = useMemo(() => {
+    const meta = FILTERABLE_BY_API[apiPath] ?? {}
+    return Object.fromEntries(
+      Object.entries(meta).flatMap(([key, m]) => (m.prefixes ? [[key, m.prefixes]] : []))
+    )
+  }, [apiPath])
+
+  const sortableColumns = useMemo(() => {
+    const meta = SORTABLE_BY_API[apiPath]
+    return meta ? new Set(Object.keys(meta)) : undefined
+  }, [apiPath])
+
   // Column filters go to the API alongside the search box, so they narrow the
   // whole table rather than just the rows already loaded.
   const serializedFilters = useMemo(() => serializeColumnFilters(columnFilters), [columnFilters])
@@ -241,7 +270,7 @@ export function OrdersTable({
   useEffect(() => {
     if (!hydrated) return
     fetchOrders(currentPage)
-  }, [hydrated, currentPage, appliedSearch, appliedFilters, statusFilter])
+  }, [hydrated, currentPage, appliedSearch, appliedFilters, statusFilter, sort])
 
   const beginRequest = useLatestRequest()
 
@@ -263,6 +292,7 @@ export function OrdersTable({
       if (appliedSearch) params.append('search', appliedSearch)
       if (statusFilter) params.append('status', statusFilter)
       if (appliedFilters) params.append('columnFilters', appliedFilters)
+      appendSortParams(params, sort)
 
       const response = await fetch(`${apiPath}?${params.toString()}`, { signal })
       const result = await readJsonResponse(response)
@@ -345,7 +375,8 @@ export function OrdersTable({
                     status: statusFilter,
                     columnFilters: appliedFilters,
                   }
-                : {}
+                : {},
+              sort
             )
       if (rows.length === 0) {
         setError("Nothing to export")
@@ -886,7 +917,11 @@ export function OrdersTable({
             filterOptions={filterOptions}
             onRequestFilterOptions={handleRequestFilterOptions}
             filterableColumns={filterableColumns}
+            prefixOptions={prefixOptions}
             totalRows={pagination.total}
+            sort={sort}
+            onSortChange={setSort}
+            sortableColumns={sortableColumns}
             editableFields={inlineEdit?.fields}
             onCellSave={inlineEdit ? handleCellSave : undefined}
             editHint={inlineEdit?.hints}

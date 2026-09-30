@@ -14,12 +14,15 @@ import type { ReactNode } from "react"
 import {
   ActiveFilterChips,
   ColumnFilterControl,
+  ColumnSortMenu,
   defaultFilter,
   isFilterActive,
   type ColumnFilter,
 } from "@/components/data-table-filters"
 import { InlineEditCell } from "@/components/inline-edit-cell"
 import { useRowHighlight, rowHighlightShadow } from "@/lib/table-utils"
+import { StickyHorizontalScrollbar } from "@/components/sticky-horizontal-scrollbar"
+import type { TableSort } from "@/lib/table-sort"
 import {
   ORDER_STATUSES,
   ORDER_STATUS_FALLBACK,
@@ -173,7 +176,11 @@ export function OrdersDataTable({
   filterOptions = {},
   onRequestFilterOptions,
   filterableColumns,
+  prefixOptions,
   totalRows,
+  sort,
+  onSortChange,
+  sortableColumns,
   editableFields,
   onCellSave,
   editHint,
@@ -208,8 +215,18 @@ export function OrdersDataTable({
    * Omit to treat every column as filterable.
    */
   filterableColumns?: Set<string>
+  /** First-letter quick picks per column key, for the columns that offer them. */
+  prefixOptions?: Record<string, { value: string; label: string }[]>
   /** Server-wide row count for the active filters. */
   totalRows?: number
+  /**
+   * The column the whole table is ordered by, owned by the parent and sent to
+   * the API. Without `onSortChange` the headers have no sort menus.
+   */
+  sort?: TableSort | null
+  onSortChange?: (sort: TableSort | null) => void
+  /** Keys the API can order by. Omit to treat every column as sortable. */
+  sortableColumns?: Set<string>
   /**
    * Keys whose cells can be typed into directly. Requires `onCellSave`; the
    * parent owns the write and the row state behind it.
@@ -273,6 +290,19 @@ export function OrdersDataTable({
   useLayoutEffect(() => {
     measure()
   }, [orders.length, selectable, visibleFields.length])
+
+  // The floating header copies the real header's column widths, so it has to
+  // be re-measured whenever any of them changes — not only when the row count
+  // does. A sort, a new page or an edited cell keeps the same number of rows but
+  // resizes columns, and the copy then sat up to a column's width out of line
+  // with the body below it. Watching the cells themselves catches every cause.
+  useEffect(() => {
+    const labelRow = theadRef.current?.rows[0]
+    if (!labelRow || typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(() => measure())
+    for (const th of Array.from(labelRow.children)) observer.observe(th)
+    return () => observer.disconnect()
+  }, [visibleFields, selectable, showActions])
 
   useEffect(() => {
     const container = scrollRef.current
@@ -391,6 +421,20 @@ export function OrdersDataTable({
   const allFilteredSelected =
     orders.length > 0 && orders.every((o) => selectedIds?.has(o.id))
 
+  // The sort dropdown beside each column name. Rendered in both copies of the
+  // header (in place and floating), which share the one sort state.
+  const sortMenu = (field: { key: string; label: string }) =>
+    onSortChange ? (
+      <ColumnSortMenu
+        columnKey={field.key}
+        label={field.label}
+        kind={filterKind(field.key)}
+        sort={sort ?? null}
+        onSortChange={onSortChange}
+        sortable={!sortableColumns || sortableColumns.has(field.key)}
+      />
+    ) : null
+
   const renderHeaderCells = (fixedWidths: boolean) => (
     <tr style={{ borderBottom: '2px solid #e5e5e5' }}>
       {visibleFields.map((field, i) => {
@@ -420,9 +464,14 @@ export function OrdersDataTable({
                   style={{ accentColor: '#012e64' }}
                 />
                 <span>{field.label}</span>
+                <span className="ml-auto">{sortMenu(field)}</span>
               </div>
             ) : (
-              field.label
+              // Label on the left, sort menu pinned to the cell's right edge.
+              <div className="flex items-center justify-between gap-2">
+                <span>{field.label}</span>
+                {sortMenu(field)}
+              </div>
             )}
           </th>
         )
@@ -472,6 +521,7 @@ export function OrdersDataTable({
               options={filterOptions[field.key] ?? []}
               onOpenOptions={() => onRequestFilterOptions?.(field.key)}
               filterable={!filterableColumns || filterableColumns.has(field.key)}
+              prefixOptions={prefixOptions?.[field.key]}
             />
           </th>
         )
@@ -809,6 +859,10 @@ export function OrdersDataTable({
           </div>
         )}
       </div>
+
+      {/* The table's own scrollbar is under its last row; this keeps one at
+          the bottom of the window so the far columns are reachable anywhere. */}
+      <StickyHorizontalScrollbar targetRef={scrollRef} />
 
       <div
         ref={floatingOuterRef}

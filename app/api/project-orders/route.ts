@@ -13,6 +13,7 @@ import {
   runListQuery,
   type CountOptions,
 } from '@/lib/list-query';
+import { PROJECT_ORDERS_SORT_COLUMNS, applySort, parseSort } from '@/lib/table-sort';
 
 // Text columns of project_orders_view that the search box matches against.
 // Several view columns (PM, project_status, project_type, construction_type,
@@ -52,6 +53,8 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const { page, limit, offset, countOnly } = parseListParams(searchParams);
     const search = searchParams.get('search') || '';
+    // Column sort from the header menus. Unknown columns fall back to the default.
+    const sort = parseSort(searchParams, PROJECT_ORDERS_SORT_COLUMNS);
     // Per-column header filters. Unknown columns are dropped by the whitelist.
     const columnFilters = parseColumnFilters(
       searchParams.get('columnFilters'),
@@ -75,10 +78,15 @@ export async function GET(request: NextRequest) {
       offset,
       countOnly,
       buildQuery,
+      // The chosen column first, then newest first, then the (project, order)
+      // pair — unique per row — so equal values keep one order across pages.
       order: (query) =>
-        query
-          .order('created_at', { ascending: false })
-          .order('order_pk', { ascending: true }),
+        applySort(query, sort, PROJECT_ORDERS_SORT_COLUMNS, (q) =>
+          q
+            .order('created_at', { ascending: false })
+            .order('id', { ascending: true })
+            .order('order_pk', { ascending: true })
+        ),
     });
 
     if (!result.ok) {

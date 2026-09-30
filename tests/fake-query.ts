@@ -31,12 +31,17 @@ const METHODS = [
   "range",
 ] as const
 
+// Option objects ({ referencedTable }, { ascending }) print as JSON so the
+// assertions can see them; lists keep printing as "a,b".
+const show = (arg: unknown): string =>
+  arg && typeof arg === "object" && !Array.isArray(arg) ? JSON.stringify(arg) : String(arg)
+
 export const fakeQuery = (): FakeQuery => {
   const calls: string[] = []
   const query: FakeQuery = { calls }
   for (const method of METHODS) {
     query[method] = (...args: unknown[]) => {
-      calls.push(`${method}(${args.map((a) => String(a)).join(",")})`)
+      calls.push(`${method}(${args.map(show).join(",")})`)
       return query
     }
   }

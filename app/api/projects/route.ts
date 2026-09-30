@@ -14,6 +14,7 @@ import {
   runListQuery,
   type CountOptions,
 } from '@/lib/list-query';
+import { PROJECTS_SORT_COLUMNS, applySort, parseSort } from '@/lib/table-sort';
 
 // Text columns the search box matches against.
 const SEARCH_COLUMNS = [
@@ -45,6 +46,8 @@ export async function GET(request: NextRequest) {
     const filterPM = searchParams.get('filterPM') || '';
     const filterPmType = searchParams.get('filterPmType') || '';
     const filterStatus = searchParams.get('filterStatus') || '';
+    // Column sort from the header menus. Unknown columns fall back to the default.
+    const sort = parseSort(searchParams, PROJECTS_SORT_COLUMNS);
     // Per-column header filters. Unknown columns are dropped by the whitelist.
     const columnFilters = parseColumnFilters(
       searchParams.get('columnFilters'),
@@ -87,7 +90,12 @@ export async function GET(request: NextRequest) {
       offset,
       countOnly,
       buildQuery,
-      order: (query) => query.order('created_at', { ascending: false }),
+      // The chosen column first, then newest first, then the key as a
+      // tie-breaker so equal values keep one order across pages.
+      order: (query) =>
+        applySort(query, sort, PROJECTS_SORT_COLUMNS, (q) =>
+          q.order('created_at', { ascending: false }).order('id', { ascending: true })
+        ),
     });
 
     if (!result.ok) {

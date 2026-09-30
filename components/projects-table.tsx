@@ -21,9 +21,13 @@ import {
   downloadCsv,
 } from "@/lib/table-utils"
 import { serializeColumnFilters } from "@/lib/column-filters"
+import { PROJECTS_SORT_COLUMNS, appendSortParams } from "@/lib/table-sort"
 import { ProjectsDataTable } from "@/components/projects-data-table"
 import { CreateProjectDialog } from "@/components/create-project-dialog"
 import { EditProjectDialog } from "@/components/edit-project-dialog"
+
+/** Columns /api/projects will order by — the sort menu's whitelist. */
+const PROJECTS_SORTABLE = new Set(Object.keys(PROJECTS_SORT_COLUMNS))
 
 export function ProjectsTable({
   onProjectsChange,
@@ -49,6 +53,8 @@ export function ProjectsTable({
     setSearchTerm,
     columnFilters,
     setColumnFilters,
+    sort,
+    setSort,
     currentPage,
     setCurrentPage,
     ready,
@@ -82,7 +88,7 @@ export function ProjectsTable({
   useEffect(() => {
     if (!hydrated) return
     fetchProjects(currentPage)
-  }, [hydrated, currentPage, appliedSearch, appliedFilters])
+  }, [hydrated, currentPage, appliedSearch, appliedFilters, sort])
 
   const beginRequest = useLatestRequest()
 
@@ -103,6 +109,7 @@ export function ProjectsTable({
       // search the table isn't showing yet.
       if (appliedSearch) params.append('search', appliedSearch)
       if (appliedFilters) params.append('columnFilters', appliedFilters)
+      appendSortParams(params, sort)
 
       const response = await fetch(`/api/projects?${params.toString()}`, { signal })
       const result = await readJsonResponse(response)
@@ -170,7 +177,8 @@ export function ProjectsTable({
               "/api/projects",
               scope === "filtered"
                 ? { search: appliedSearch, columnFilters: appliedFilters }
-                : {}
+                : {},
+              sort
             )
       if (rows.length === 0) {
         setError("Nothing to export")
@@ -529,6 +537,9 @@ export function ProjectsTable({
             filterOptions={filterOptions}
             onRequestFilterOptions={handleRequestFilterOptions}
             totalRows={pagination.total}
+            sort={sort}
+            onSortChange={setSort}
+            sortableColumns={PROJECTS_SORTABLE}
           />
         )}
       </div>

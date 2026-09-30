@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { ColumnFilter } from "@/lib/column-filters"
+import { appendSortParams, validateSort, type TableSort } from "@/lib/table-sort"
 
 /**
  * Persists a table's search/filter state to localStorage (per storageKey) so it
@@ -14,6 +15,7 @@ export function usePersistedTableState(storageKey: string) {
   const [statusFilter, setStatusFilterState] = useState("")
   const [columnFilters, setColumnFiltersState] = useState<Record<string, ColumnFilter>>({})
   const [currentPage, setCurrentPage] = useState(1)
+  const [sort, setSortState] = useState<TableSort | null>(null)
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
@@ -28,6 +30,8 @@ export function usePersistedTableState(storageKey: string) {
         if (saved.columnFilters && typeof saved.columnFilters === "object") {
           setColumnFiltersState(saved.columnFilters)
         }
+        // Absent in state saved before columns could be sorted.
+        setSortState(validateSort(saved.sort))
       }
     } catch {
       // corrupted saved state — start fresh
@@ -45,12 +49,13 @@ export function usePersistedTableState(storageKey: string) {
           status: statusFilter,
           page: currentPage,
           columnFilters,
+          sort,
         })
       )
     } catch {
       // storage full/unavailable — persistence is best-effort
     }
-  }, [ready, storageKey, searchTerm, statusFilter, currentPage, columnFilters])
+  }, [ready, storageKey, searchTerm, statusFilter, currentPage, columnFilters, sort])
 
   // Changing the search always jumps back to page 1
   const setSearchTerm = (value: string) => {
@@ -70,6 +75,12 @@ export function usePersistedTableState(storageKey: string) {
     setCurrentPage(1)
   }
 
+  // A new order puts different rows on page 1, so start there.
+  const setSort = (value: TableSort | null) => {
+    setSortState(value)
+    setCurrentPage(1)
+  }
+
   return {
     searchTerm,
     setSearchTerm,
@@ -77,6 +88,8 @@ export function usePersistedTableState(storageKey: string) {
     setStatusFilter,
     columnFilters,
     setColumnFilters,
+    sort,
+    setSort,
     currentPage,
     setCurrentPage,
     ready,
@@ -247,11 +260,13 @@ export const isAbortError = (err: unknown): boolean =>
  * Fetches every row from a paginated API endpoint (page/limit/search/status/
  * columnFilters params, {data, pagination} response shape) by walking all pages.
  * The filters must match the ones the table is showing, or an export of
- * "filtered rows" would quietly contain more than the user can see.
+ * "filtered rows" would quietly contain more than the user can see. The sort
+ * is passed too, so the file lists the rows in the order the table shows them.
  */
 export async function fetchAllRows(
   apiPath: string,
-  filters: { search?: string; status?: string; columnFilters?: string } = {}
+  filters: { search?: string; status?: string; columnFilters?: string } = {},
+  sort: TableSort | null = null
 ): Promise<any[]> {
   const limit = 1000
   const all: any[] = []
@@ -262,6 +277,7 @@ export async function fetchAllRows(
     if (filters.search) params.append("search", filters.search)
     if (filters.status) params.append("status", filters.status)
     if (filters.columnFilters) params.append("columnFilters", filters.columnFilters)
+    appendSortParams(params, sort)
 
     const response = await fetch(`${apiPath}?${params.toString()}`)
     const result = await readJsonResponse(response)

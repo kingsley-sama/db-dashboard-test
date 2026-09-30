@@ -34,10 +34,19 @@ export type FilterOp = TextOp | MultiOp | DateOp | NumericFilterOp
 
 export type FilterKind = "text" | "multi" | "numeric" | "date"
 
+// Text and numeric filters can hold several values. `value` is what is in the
+// input right now and already filters while it is being typed; Enter pins it to
+// `values` and empties the input for the next one. `values` is optional so
+// filters saved before it existed keep working. See filterTerms for how the
+// terms combine.
+//
+// A text column can also offer quick picks by first letter (see
+// ColumnFilterMeta.prefixes). The picked ones are in `prefixes`; they narrow
+// the rows alongside whatever is typed.
 export type ColumnFilter =
-  | { kind: "text"; value: string; op?: TextOp }
+  | { kind: "text"; value: string; values?: string[]; prefixes?: string[]; op?: TextOp }
   | { kind: "multi"; values: string[]; op?: MultiOp }
-  | { kind: "numeric"; op: NumericFilterOp; value: string }
+  | { kind: "numeric"; op: NumericFilterOp; value: string; values?: string[] }
   // `text` is what the user typed (mm/dd/yy or a range) and is kept so the input
   // round-trips. `from`/`to` are absolute ISO instants resolved in the browser's
   // timezone — the server compares those, never the text, because the cells are
@@ -176,6 +185,58 @@ export const withOp = (filter: ColumnFilter, op: FilterOp): ColumnFilter => {
   }
 }
 
+/**
+ * Every value a text or numeric filter is matching on: the pinned ones, then
+ * whatever is still in the input, trimmed, with blanks and repeats dropped
+ * (case-insensitively — "ACME" and "acme" match the same rows). Numeric terms
+ * that don't parse yet ("-", "1.") are left out.
+ *
+ * Positive operators match a row that satisfies *any* term — two project IDs
+ * bring back both projects. Negative ones ("does not contain", "is not") keep a
+ * row only when it matches *none* of them, which is what excluding two values
+ * means.
+ */
+export const filterTerms = (
+  filter: Extract<ColumnFilter, { kind: "text" | "numeric" }>
+): string[] => {
+  const raw = [...(Array.isArray(filter.values) ? filter.values : []), filter.value ?? ""]
+  const seen = new Set<string>()
+  const terms: string[] = []
+  for (const entry of raw) {
+    if (typeof entry !== "string") continue
+    const term = entry.trim()
+    if (term === "") continue
+    if (filter.kind === "numeric" && toNumber(term) === null) continue
+    const id = term.toLowerCase()
+    if (seen.has(id)) continue
+    seen.add(id)
+    terms.push(term)
+  }
+  return terms
+}
+
+/**
+ * Pins what is in the input as one more value and empties the input. A value
+ * already pinned, or one that isn't a value yet, leaves the filter as it was
+ * apart from the cleared input.
+ */
+export const pinFilterValue = <F extends Extract<ColumnFilter, { kind: "text" | "numeric" }>>(
+  filter: F
+): F => {
+  const typed = filter.value.trim()
+  const values = filter.values ?? []
+  if (typed === "") return filter
+  if (filter.kind === "numeric" && toNumber(typed) === null) return filter
+  const known = values.some((v) => v.trim().toLowerCase() === typed.toLowerCase())
+  return { ...filter, values: known ? values : [...values, typed], value: "" }
+}
+
+/** Drops one pinned value. */
+export const unpinFilterValue = <F extends Extract<ColumnFilter, { kind: "text" | "numeric" }>>(
+  filter: F,
+  value: string
+): F => ({ ...filter, values: (filter.values ?? []).filter((v) => v !== value) })
+
 /** A filter only counts as active once it can actually narrow the result set. */
 export const isFilterActive = (filter: ColumnFilter | undefined): boolean => {
   if (!filter) return false
@@ -184,16 +245,18 @@ export const isFilterActive = (filter: ColumnFilter | undefined): boolean => {
   if (isPresenceOp(filterOp(filter))) return true
 
   switch (filter.kind) {
+    case "text":
+      return filterTerms(filter).length > 0 || pickedPrefixes(filter).length > 0
     case "multi":
       return filter.values.length > 0
     case "numeric":
       // Half-typed input ("-", "1.") isn't a comparison yet.
-      return toNumber(filter.value) !== null
+      return filterTerms(filter).length > 0
     case "date":
       // Half-typed dates parse to no bounds; don't blank the table while typing.
       return Boolean(filter.from || filter.to)
     default:
-      return filter.value.trim() !== ""
+      return filterTerms(filter).length > 0
   }
 }
 
@@ -215,13 +278,26 @@ export const describeFilter = (filter: ColumnFilter): string => {
       return `${op === "not_in" ? "is none of" : "is any of"} ${values.join(", ")}`
     }
     case "numeric":
-      return `${phrase} ${filter.value.trim()}`
+      return `${phrase} ${filterTerms(filter).join(" or ")}`
     case "date":
       return `${phrase} ${filter.text.trim().replace(/-/, " – ")}`
-    default:
-      return `${phrase} "${filter.value.trim()}"`
+    default: {
+      const prefixes = pickedPrefixes(filter)
+      const start = prefixes.length ? `starts with ${prefixes.join(" or ")}` : ""
+      const terms = filterTerms(filter).map((term) => `"${term}"`)
+      if (terms.length === 0) return start
+      const negative = op === "not_contains" || op === "is_not"
+      const typed = `${phrase} ${terms.join(negative ? " nor " : " or ")}`
+      return start ? `${start}, ${typed}` : typed
+    }
   }
 }
+
+/** The first-letter quick picks a text filter has selected. */
+export const pickedPrefixes = (filter: ColumnFilter): string[] =>
+  filter.kind === "text" && Array.isArray(filter.prefixes)
+    ? filter.prefixes.filter((p) => typeof p === "string" && p !== "")
+    : []
 
 // ---------------------------------------------------------------------------
 // Column metadata — also the whitelist
@@ -240,6 +316,13 @@ export type ColumnFilterMeta = {
    * their select.
    */
   embed?: string
+  /**
+   * Quick picks for a text column whose values are coded by their first
+   * characters: picking one keeps the rows starting with it. The match is
+   * case-sensitive and literal. This list is also the whitelist — a prefix a
+   * client sends that isn't in it is dropped.
+   */
+  prefixes?: { value: string; label: string }[]
 }
 
 export type ColumnFilterMap = Record<string, ColumnFilterMeta>
@@ -334,11 +417,24 @@ export const PROJECT_ORDERS_FILTER_COLUMNS: ColumnFilterMap = {
   client_contact_name: t("client_contact_name"),
   company_email: t("company_email"),
   path_to_files: t("path_to_files"),
-  // NOTE: click_up_task_link and ap_epcs_invoicing are shown by the table but
-  // deliberately left out — nothing else in the app filters them, so their
-  // Postgres type is unconfirmed and an ilike against an enum column would fail
-  // the whole request. The table renders their filter input disabled instead of
-  // accepting one it would silently drop.
+  // Invoicing status, coded by its first letter: "Y - Abgerechnet (RE …)" has
+  // been invoiced, "N - Gratis" / "N - Intern" / … won't be. The rest ("? -
+  // Gutschein …", "noch nicht bestätigt") is neither, which is why the picks
+  // are case-sensitive — "noch" must not count as N. It is a text column, so the
+  // search box works on it as on any other.
+  ap_epcs_invoicing: {
+    column: "ap_epcs_invoicing",
+    type: "text",
+    prefixes: [
+      { value: "Y", label: "Y" },
+      { value: "N", label: "N" },
+    ],
+  },
+  // NOTE: click_up_task_link is shown by the table but deliberately left out —
+  // nothing else in the app filters it, so its Postgres type is unconfirmed and
+  // an ilike against an enum column would fail the whole request. The table
+  // renders its filter input disabled instead of accepting one it would
+  // silently drop.
   project_status: e("project_status"),
   project_type: e("project_type"),
   construction_type: e("construction_type"),
@@ -473,10 +569,22 @@ export const parseColumnFilters = (
   const result: Record<string, ColumnFilter> = {}
   for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
     if (!meta[key]) continue
-    const filter = validateFilter(value)
+    const filter = restrictPrefixes(validateFilter(value), meta[key])
     if (filter && isFilterActive(filter)) result[key] = filter
   }
   return result
+}
+
+/** Keeps only the quick picks the column actually offers. */
+const restrictPrefixes = (
+  filter: ColumnFilter | null,
+  meta: ColumnFilterMeta
+): ColumnFilter | null => {
+  if (!filter || filter.kind !== "text" || filter.prefixes === undefined) return filter
+  const allowed = new Set((meta.prefixes ?? []).map((p) => p.value))
+  const prefixes = pickedPrefixes(filter).filter((p) => allowed.has(p))
+  const { prefixes: _dropped, ...rest } = filter
+  return prefixes.length ? { ...rest, prefixes } : rest
 }
 
 const validateFilter = (value: unknown): ColumnFilter | null => {
@@ -489,10 +597,19 @@ const validateFilter = (value: unknown): ColumnFilter | null => {
   if (kind !== "numeric" && op !== undefined && !isValidOp(kind, op)) return null
 
   switch (kind) {
-    case "text":
-      return typeof filter.value === "string"
-        ? { kind: "text", value: filter.value, ...(op ? { op: op as TextOp } : {}) }
-        : null
+    case "text": {
+      if (typeof filter.value !== "string") return null
+      const values = validateValues(filter.values)
+      const prefixes = validateValues(filter.prefixes)
+      if (values === null || prefixes === null) return null
+      return {
+        kind: "text",
+        value: filter.value,
+        ...(values.length ? { values } : {}),
+        ...(prefixes.length ? { prefixes } : {}),
+        ...(op ? { op: op as TextOp } : {}),
+      }
+    }
     case "multi":
       return Array.isArray(filter.values) && filter.values.every((v) => typeof v === "string")
         ? {
@@ -501,12 +618,19 @@ const validateFilter = (value: unknown): ColumnFilter | null => {
             ...(op ? { op: op as MultiOp } : {}),
           }
         : null
-    case "numeric":
+    case "numeric": {
       // Unlike the other kinds numeric has always carried its operator, so an
       // unknown one is rejected rather than defaulted.
-      return typeof filter.value === "string" && isValidOp("numeric", filter.op)
-        ? { kind: "numeric", op: filter.op as NumericFilterOp, value: filter.value }
-        : null
+      if (typeof filter.value !== "string" || !isValidOp("numeric", filter.op)) return null
+      const values = validateValues(filter.values)
+      if (values === null) return null
+      return {
+        kind: "numeric",
+        op: filter.op as NumericFilterOp,
+        value: filter.value,
+        ...(values.length ? { values } : {}),
+      }
+    }
     case "date": {
       const from = typeof filter.from === "string" ? filter.from : null
       const to = typeof filter.to === "string" ? filter.to : null
@@ -525,6 +649,13 @@ const validateFilter = (value: unknown): ColumnFilter | null => {
     default:
       return null
   }
+}
+
+/** Pinned values: absent is none, anything but a list of strings is invalid. */
+const validateValues = (values: unknown): string[] | null => {
+  if (values === undefined) return []
+  if (!Array.isArray(values) || !values.every((v) => typeof v === "string")) return null
+  return values as string[]
 }
 
 // ---------------------------------------------------------------------------
@@ -576,6 +707,26 @@ const applyPresence = (query: any, column: string, op: PresenceOp): any =>
   op === "blank" ? query.is(column, null) : query.not(column, "is", null)
 
 /**
+ * Matches rows satisfying any one of several conditions on a column.
+ *
+ * A column on an embedded resource is ORed inside that resource
+ * (`projects.or=(...)`) rather than at the top level, where PostgREST doesn't
+ * reliably resolve a related column. The routes switch such an embed to
+ * `!inner` whenever it is filtered (see needsInnerJoin), so a parent whose
+ * embedded row matches none of the conditions is dropped either way.
+ */
+const anyOf = (
+  query: any,
+  meta: ColumnFilterMeta,
+  conditions: (column: string) => string[]
+): any =>
+  meta.embed
+    ? query.or(conditions(meta.column.slice(meta.embed.length + 1)).join(","), {
+        referencedTable: meta.embed,
+      })
+    : query.or(conditions(meta.column).join(","))
+
+/**
  * Chains every active filter onto a Supabase query builder. Callers must apply
  * their role gating before this, so user-supplied filters can only ever narrow
  * an already-restricted set, never widen it.
@@ -602,28 +753,58 @@ export const applyColumnFilters = (
 
     switch (filter.kind) {
       case "text": {
-        const value = filter.value.trim()
+        // First-letter picks: a row starting with any picked one. Literal and
+        // case-sensitive (LIKE, not ILIKE), and only ever a value from the
+        // column's own whitelist.
+        const prefixes = pickedPrefixes(filter)
+        if (prefixes.length === 1) {
+          result = result.like(column, `${escapeLikeLiteral(prefixes[0])}%`)
+        } else if (prefixes.length > 1) {
+          result = anyOf(result, meta[key], (col) =>
+            prefixes.map((p) => `${col}.like.${escapePostgrestValue(`${escapeLikeLiteral(p)}%`)}`)
+          )
+        }
+
+        const terms = filterTerms(filter)
+        if (terms.length === 0) break
         switch (op as TextOp) {
           case "is":
-            result = result.ilike(column, escapeLikeLiteral(value))
+            result =
+              terms.length === 1
+                ? result.ilike(column, escapeLikeLiteral(terms[0]))
+                : anyOf(result, meta[key], (col) =>
+                    terms.map(
+                      (term) => `${col}.ilike.${escapePostgrestValue(escapeLikeLiteral(term))}`
+                    )
+                  )
             break
           // "does not contain" / "is not" keep the rows that hold no value at
           // all: in SQL `NULL NOT ILIKE 'x'` is NULL, which would drop them,
           // and a user excluding a company does not mean to exclude the rows
-          // with no company along with it.
+          // with no company along with it. One condition per term, and the
+          // conditions AND together: the row must match none of them.
           case "is_not":
-            result = result.or(
-              `${column}.not.ilike.${escapePostgrestValue(escapeLikeLiteral(value))},` +
-                `${column}.is.null`
-            )
+            for (const term of terms) {
+              result = result.or(
+                `${column}.not.ilike.${escapePostgrestValue(escapeLikeLiteral(term))},` +
+                  `${column}.is.null`
+              )
+            }
             break
           case "not_contains":
-            result = result.or(
-              `${column}.not.ilike.${escapePostgrestValue(`%${value}%`)},${column}.is.null`
-            )
+            for (const term of terms) {
+              result = result.or(
+                `${column}.not.ilike.${escapePostgrestValue(`%${term}%`)},${column}.is.null`
+              )
+            }
             break
           default:
-            result = result.ilike(column, `%${value}%`)
+            result =
+              terms.length === 1
+                ? result.ilike(column, `%${terms[0]}%`)
+                : anyOf(result, meta[key], (col) =>
+                    terms.map((term) => `${col}.ilike.${escapePostgrestValue(`%${term}%`)}`)
+                  )
         }
         break
       }
@@ -659,9 +840,13 @@ export const applyColumnFilters = (
       }
 
       case "numeric": {
-        const value = toNumber(filter.value)
-        if (value === null) break
-        result = result[NUMERIC_METHOD[op as NumericOp]](column, value)
+        const values = filterTerms(filter).map((term) => toNumber(term) as number)
+        if (values.length === 0) break
+        const method = NUMERIC_METHOD[op as NumericOp]
+        result =
+          values.length === 1
+            ? result[method](column, values[0])
+            : anyOf(result, meta[key], (col) => values.map((value) => `${col}.${method}.${value}`))
         break
       }
 
