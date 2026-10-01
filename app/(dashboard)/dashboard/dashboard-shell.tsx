@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Users, Settings, Shield, Menu, ChevronLeft, ChevronRight, Package, FolderKanban, Layers, Sparkles, Table2 } from 'lucide-react';
+import { Users, Settings, Shield, Menu, ChevronLeft, ChevronRight, Package, FolderKanban, Layers, Sparkles, Table2, Receipt } from 'lucide-react';
 import { useBriefNotifications } from '@/lib/hooks/use-brief-notifications';
 
 export function DashboardShell({
@@ -17,6 +17,8 @@ export function DashboardShell({
 }) {
   const isOwner = role === 'owner';
   const isApm = role === 'apm';
+  // Supplier invoices: owners and admins only (lib/invoices/request.ts)
+  const canInvoice = role === 'owner' || role === 'admin';
   const pathname = usePathname();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(true);
@@ -34,6 +36,7 @@ export function DashboardShell({
       ? [
           { href: '/dashboard/all-orders', icon: Layers, label: 'All Orders' },
           { href: '/dashboard/project-orders', icon: Table2, label: 'Project Orders' },
+          ...(canInvoice ? [{ href: '/dashboard/invoices', icon: Receipt, label: 'Invoices' }] : []),
           { href: '/dashboard', icon: Users, label: 'Team' }
         ]
       : []),

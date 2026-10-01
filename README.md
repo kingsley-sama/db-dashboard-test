@@ -58,6 +58,27 @@ A modern, intuitive dashboard for managing SupaBase databases with a cleaner and
    
    Navigate to [http://localhost:3000](http://localhost:3000) to see the application.
 
+## Supplier Invoices
+
+**Dashboard → Invoices** (owners and admins) builds a supplier's invoice for a period and a view type, and downloads it as a PDF. Everything is worked out live from the `orders` table; nothing is saved and no table was added.
+
+- **Billable orders:** the supplier's orders whose `date_first_delivery_complete` falls in the range (both days included). Orders without that date are never billed.
+- **View type** comes from `orders.product` — see `PRODUCTS_BY_VIEW_TYPE` in `lib/invoices/categorize.ts`.
+- **Price category** is derived automatically in `resolveCategory` (same file): exterior from the proposal's building type (EFH, DHH, MFH-…), then building words in the project name, then a Commercial property type, then SFH; interior from room words in the order comment, then the property type, then Living Areas. Lines decided by a fallback are marked *assumed* on the preview.
+- **Prices** live in `PRICE_ROWS` in `lib/invoices/pricing.ts`, in cents. Order total = modelling fee + primary view + (quantity − 1) × additional view. To change a price from a date on, set `effectiveTo` on the current row and add a new row with the new `effectiveFrom`; earlier deliveries keep the old price. A row with `null` prices (Commercial & Mixed-Use today) lists its orders as skipped.
+- **Invoice parties** come from environment variables, so no company or supplier details are in the code:
+
+  ```
+  INVOICE_COMPANY_NAME=
+  INVOICE_COMPANY_ADDRESS=        # lines separated by \n
+  INVOICE_COMPANY_TAX_ID=
+  INVOICE_COMPANY_EMAIL=
+  INVOICE_PAYMENT_TERMS=
+  INVOICE_SUPPLIER_DETAILS=       # JSON: {"Studio98": {"legalName": "", "address": "", "taxId": "", "bankDetails": "", "email": ""}}
+  ```
+
+The calculation and category rules are unit-tested in `tests/invoice-calculate.test.ts` (`npm test`).
+
 ## Contributing
 
 We follow a feature branch workflow. Please follow these steps to contribute to the project:
