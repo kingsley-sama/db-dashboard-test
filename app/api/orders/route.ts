@@ -15,6 +15,7 @@ import {
   type CountOptions,
 } from '@/lib/list-query';
 import { ORDERS_SORT_COLUMNS, applySort, parseSort } from '@/lib/table-sort';
+import { applyApmOrderGate, getReopenedProjectIds } from '@/lib/apm-order-access';
 
 // Text columns the search box matches against.
 const SEARCH_COLUMNS = [
@@ -53,10 +54,12 @@ export async function GET(request: NextRequest) {
       ORDERS_FILTER_COLUMNS
     );
 
-    // APMs must not see orders belonging to completed projects: switch the
-    // projects join to an inner join and require no completion date. (This also
-    // hides orders with no matching project row from APMs.)
+    // APMs must not see orders belonging to completed projects, unless the
+    // project has a revision/extra (-re / -ext) order: see lib/apm-order-access.
+    // The projects join becomes an inner join (which also hides orders with no
+    // matching project row from APMs).
     const isApm = user.role === 'apm';
+    const reopenedProjectIds = isApm ? await getReopenedProjectIds() : [];
     // customer_name/customer_email/project_name are served from the joined
     // project row, and PostgREST only *drops* rows on an embedded filter when
     // the join is inner — otherwise it just nulls the embed and the row stays.
@@ -76,12 +79,7 @@ export async function GET(request: NextRequest) {
 
       // Role gating first: user-supplied filters may only narrow this further.
       if (isApm) {
-        // The end date lives in two places that can disagree: the project's
-        // delivery_completion_date and the order's own project_completion_date.
-        // A project counts as ended if either is set.
-        query = query
-          .is('projects.delivery_completion_date', null)
-          .is('project_completion_date', null);
+        query = applyApmOrderGate(query, reopenedProjectIds);
       }
 
       if (search) {

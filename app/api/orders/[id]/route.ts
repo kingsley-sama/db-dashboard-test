@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/my-app-auth';
 import { supabaseAdmin } from '@/lib/supabase';
+import { canApmAccessOrder } from '@/lib/apm-order-access';
 
 // PUT /api/orders/[id] - Update an order
 export async function PUT(
@@ -17,7 +18,8 @@ export async function PUT(
     const body = await request.json();
     const { id } = await params;
 
-    // APMs have no access to orders belonging to completed projects
+    // APMs have no access to orders belonging to completed projects, unless
+    // the project has a revision/extra order (lib/apm-order-access)
     if (user.role === 'apm') {
       const { data: existing, error: lookupError } = await supabaseAdmin
         .from('orders')
@@ -30,8 +32,12 @@ export async function PUT(
       // Supabase types the embed as an array even for a to-one relation
       const projectEmbed: any = existing?.projects;
       const project = Array.isArray(projectEmbed) ? projectEmbed[0] : projectEmbed;
-      // Ended if either the project's or the order's own end date is set
-      if (project?.delivery_completion_date || existing?.project_completion_date) {
+      const allowed = await canApmAccessOrder({
+        project_id: existing?.project_id,
+        project_completion_date: existing?.project_completion_date,
+        delivery_completion_date: project?.delivery_completion_date,
+      });
+      if (!allowed) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       }
     }
